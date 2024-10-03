@@ -47,6 +47,10 @@ object GovernmentActor {
               replyTo ! government.bidPrices.get(resourceType)
               Behaviors.same
 
+            case GetAskPrice(replyTo, resourceType) =>
+              replyTo ! government.askPrices.get(resourceType)
+              Behaviors.same
+
             case MakeBid(actor, resourceType, quantity, price) =>
               /*val futureResponse: Future[RegionActor.BidResponse] = actor.ask(replyTo => RegionActor.ReceiveBid(resourceType, quantity, price, replyTo))
 

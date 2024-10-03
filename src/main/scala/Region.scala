@@ -79,7 +79,8 @@ object RegionActor {
 
   case class ChangeSeason() extends Command
 
-  case class SellResourceToGovt(sellTo: ActorRef[GovernmentActor.Command], resourceType: ResourceType, qty: Int, price: Int) extends Command
+  case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
+  case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
 
   def apply(region: Region): Behavior[Command] = Behaviors.setup { context =>
     implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
@@ -106,17 +107,17 @@ object RegionActor {
                 entry._1 match {
                   case Food =>
                     val foodProduced = Math.round(output * region.season.multiplier).toInt
-                    updatedResources.updated(entry._1, updatedResources(entry._1) + foodProduced)
+                    updatedResources.updated(entry._1, updatedResources.getOrElse(entry._1, 0) + foodProduced)
                   case _ =>
-                    updatedResources.updated(entry._1, updatedResources(entry._1) + output.toInt)
+                    updatedResources.updated(entry._1, updatedResources.getOrElse(entry._1, 0) + output.toInt)
                 }
               }
 
               //This is just dummy logic to test it, I'll come up with a better formula soon
-              if (newStoredResources(Food) > 200) {
+              if (newStoredResources(Food) > region.population * 1.5) {
                 context.ask(region.government, GetBidPrice(_, Food)) {
                   case Success(Some(price)) =>
-                    context.self ! SellResourceToGovt(region.government, Food, newStoredResources(Food) - 200, price)
+                    context.self ! SellResourceToGovt(Food, newStoredResources(Food) - Math.round(region.population * 1.5).toInt, price)
                     ActorNoOp()
                   case Success(None) =>
                     ActorNoOp()
@@ -128,20 +129,26 @@ object RegionActor {
 
               tick(region.copy(storedResources = newStoredResources))
 
-            case SellResourceToGovt(sellTo, resourceType, qty, price) =>
-              sellTo ! GovernmentActor.BuyResource(resourceType, qty)
+            case SellResourceToGovt(resourceType, qty, price) =>
+              region.government ! GovernmentActor.BuyResource(resourceType, qty)
 
               val newStoredResources = region.storedResources +
-                (resourceType -> (region.storedResources(resourceType) - qty)) +
+                (resourceType -> (region.storedResources.getOrElse(resourceType, 0) - qty)) +
                 (Money -> (region.storedResources.getOrElse(Money, 0) + (qty*price)))
+
+              tick(region.copy(storedResources = newStoredResources))
+
+            case BuyResourceFromGovt(resourceType, qty, price) =>
+              region.government ! GovernmentActor.BuyResource(resourceType, qty)
+
+              val newStoredResources = region.storedResources +
+                (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + qty)) +
+                (Money -> (region.storedResources.getOrElse(Money, 0) - (qty * price)))
 
               tick(region.copy(storedResources = newStoredResources))
 
             case ConsumeFood() =>
               val foodConsumed = region.population //still tweaking this idea
-              println("===============")
-              println(s"food consumed: ${foodConsumed}")
-              println("===============")
               val updatedResources = region.storedResources + (Food -> Math.max(region.storedResources(Food) - foodConsumed, 0))
 
               val newPop = if (foodConsumed > region.storedResources(Food)) {
@@ -150,7 +157,20 @@ object RegionActor {
                 region.population
               }
 
-              println(s"newPop: ${newPop}")
+              if (updatedResources(Food) < region.population * 1.5) {
+                context.ask(region.government, GetAskPrice(_, Food)) {
+                  case Success(Some(price)) =>
+                    val qtyToBuy = Math.min(updatedResources.getOrElse(Money, 0)/price, Math.round(region.population * 1.5f) - updatedResources(Food))
+                    context.self ! BuyResourceFromGovt(Food, qtyToBuy, price)
+                    ActorNoOp()
+                  case Success(None) =>
+                    ActorNoOp()
+                  case Failure(exception) =>
+                    println(s"EXCEPTION WITH GOVT: ${exception.toString}")
+                    ActorNoOp()
+                }
+              }
+
 
               tick(region.copy(population = newPop, storedResources = updatedResources))
 
@@ -196,7 +216,7 @@ object RegionActor {
               Behaviors.same
 
             case BuyFromSeller(resourceType, quantity, price) =>
-              val updatedResources = region.storedResources + (resourceType -> (region.storedResources(resourceType) + quantity), Money -> (region.storedResources(Money) - Math.multiplyExact(quantity, price)))
+              val updatedResources = region.storedResources + (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + quantity), Money -> (region.storedResources.getOrElse(Money, 0) - Math.multiplyExact(quantity, price)))
               tick(region.copy(storedResources = updatedResources))
 
 

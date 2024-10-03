@@ -54,3 +54,5 @@ case class ShowInfo(replyTo: ActorRef[ManagerActor.Command])
 case class GetBidPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType)
   extends EconActorCommand with ResourceProducerCommand with GovernmentActor.Command
 
+case class GetAskPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType)
+  extends EconActorCommand with ResourceProducerCommand with GovernmentActor.Command
