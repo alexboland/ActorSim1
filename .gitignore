@@ -1,0 +1,6 @@
+.DS_Store
+.bsp/
+.idea/
+/target/
+node_modules/
+/project/
