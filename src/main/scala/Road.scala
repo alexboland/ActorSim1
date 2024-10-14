@@ -3,7 +3,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import spray.json.DefaultJsonProtocol._
 
-case class Road(origin: ActorRef[EconActorCommand], destination: ActorRef[EconActorCommand]) extends GameActor
+case class Road(origin: ActorRef[EconActorCommand], destination: ActorRef[EconActorCommand]) extends GameAgent
 
 object RoadActor {
   trait Command extends GameActorCommand

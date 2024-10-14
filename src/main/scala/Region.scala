@@ -1,19 +1,27 @@
+import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout
 import spray.json.DefaultJsonProtocol._
 
+import java.util.UUID
+import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
 
+case class RegionActorState(
+                           region: Region,
+                           governmentActor: ActorRef[GovernmentActor.Command],
+                           econActorIds: Map[ActorRef[ResourceProducerCommand], String]
+                           )
+
 case class Region(
-               laborAssignments: Map[ActorRef[EconActorCommand], Int],
+               laborAssignments: Map[String, Int],
                storedResources: Map[ResourceType, Int],
                population: Int,
                baseProduction: Map[ResourceType, Double], //Production of spare resources that happens by default
-               season: Region.Season,
-               government: ActorRef[GovernmentActor.Command]
-               )
+               season: Region.Season
+               ) extends GameAgent
 
 object Region {
   trait Season {
@@ -37,11 +45,13 @@ object Region {
     override def next = Spring
   }
 
-  def newRandomRegion(govt: ActorRef[GovernmentActor.Command]): Region = {
+  def newRandomRegion(): Region = {
 
     // TODO add code here for creating random resource base production amounts
 
     val foodProduction = (2 + Math.round(4 * Math.random())) * 0.25
+    val copperProduction = Math.round(6 * Math.random()) * 0.25
+    val woodProduction = Math.round(6 * Math.random()) * 0.25
 
     Region(
       laborAssignments = Map(),
@@ -50,10 +60,11 @@ object Region {
         Food -> 0
       ),
       baseProduction = Map(
-        Food -> foodProduction
+        Food -> foodProduction,
+        Copper -> copperProduction,
+        Wood -> woodProduction
       ),
       season = Spring,
-      government = govt
     )
   }
 }
@@ -63,7 +74,13 @@ object RegionActor {
 
   case class BuyFromSeller(resourceType: ResourceType, quantity: Int, price: Int) extends Command
 
-  case class InfoResponse(region: Region) extends ManagerActor.Command
+  case class InfoResponse(region: Region) extends GameInfo.InfoResponse {
+    val agent = region
+  }
+
+  case class FullInfoResponse(region: Region, gameAgents: List[GameAgent]) extends GameInfo.InfoResponse {
+    val agent = region
+  }
 
   case class DiscoverResource(resourceType: ResourceType, quantity: Int) extends Command
 
@@ -82,10 +99,15 @@ object RegionActor {
   case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
   case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
 
-  def apply(region: Region): Behavior[Command] = Behaviors.setup { context =>
+  case object BuildFarm extends Command
+
+  case class ShowFullInfo(replyTo: ActorRef[GameInfo.InfoResponse]) extends Command
+
+  def apply(state: RegionActorState): Behavior[Command] = Behaviors.setup { context =>
     implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
-    def tick(region: Region): Behavior[Command] = {
+    def tick(state: RegionActorState): Behavior[Command] = {
         Behaviors.receive { (context, message) =>
+          val region = state.region
           message match {
             /*case ReceiveBid(resourceType, quantity, price) =>
               if (region.storedResources(resourceType) < quantity) {
@@ -115,7 +137,7 @@ object RegionActor {
 
               //This is just dummy logic to test it, I'll come up with a better formula soon
               if (newStoredResources(Food) > region.population * 1.5) {
-                context.ask(region.government, GetBidPrice(_, Food)) {
+                context.ask(state.governmentActor, GetBidPrice(_, Food)) {
                   case Success(Some(price)) =>
                     context.self ! SellResourceToGovt(Food, newStoredResources(Food) - Math.round(region.population * 1.5).toInt, price)
                     ActorNoOp()
@@ -127,25 +149,25 @@ object RegionActor {
                 }
               }
 
-              tick(region.copy(storedResources = newStoredResources))
+              tick(state.copy(region = region.copy(storedResources = newStoredResources)))
 
             case SellResourceToGovt(resourceType, qty, price) =>
-              region.government ! GovernmentActor.BuyResource(resourceType, qty)
+              state.governmentActor ! GovernmentActor.BuyResource(resourceType, qty)
 
               val newStoredResources = region.storedResources +
                 (resourceType -> (region.storedResources.getOrElse(resourceType, 0) - qty)) +
                 (Money -> (region.storedResources.getOrElse(Money, 0) + (qty*price)))
 
-              tick(region.copy(storedResources = newStoredResources))
+              tick(state.copy(region = region.copy(storedResources = newStoredResources)))
 
             case BuyResourceFromGovt(resourceType, qty, price) =>
-              region.government ! GovernmentActor.BuyResource(resourceType, qty)
+              state.governmentActor ! GovernmentActor.BuyResource(resourceType, qty)
 
               val newStoredResources = region.storedResources +
                 (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + qty)) +
                 (Money -> (region.storedResources.getOrElse(Money, 0) - (qty * price)))
 
-              tick(region.copy(storedResources = newStoredResources))
+              tick(state.copy(region = region.copy(storedResources = newStoredResources)))
 
             case ConsumeFood() =>
               val foodConsumed = region.population //still tweaking this idea
@@ -158,7 +180,7 @@ object RegionActor {
               }
 
               if (updatedResources(Food) < region.population * 1.5) {
-                context.ask(region.government, GetAskPrice(_, Food)) {
+                context.ask(state.governmentActor, GetAskPrice(_, Food)) {
                   case Success(Some(price)) =>
                     val qtyToBuy = Math.min(updatedResources.getOrElse(Money, 0)/price, Math.round(region.population * 1.5f) - updatedResources(Food))
                     context.self ! BuyResourceFromGovt(Food, qtyToBuy, price)
@@ -172,7 +194,7 @@ object RegionActor {
               }
 
 
-              tick(region.copy(population = newPop, storedResources = updatedResources))
+              tick(state.copy(region = region.copy(population = newPop, storedResources = updatedResources)))
 
             case ChangePopulation() =>
               val baseGrowthFactor = 0.95f                       // Minimum growth factor
@@ -192,24 +214,45 @@ object RegionActor {
               println(s"new population: ${newPop}")
               println("================================")
 
-              tick(region.copy(population = newPop))
+              tick(state.copy(region = region.copy(population = newPop)))
 
             case ShowInfo(replyTo) =>
               println("region actor got ShowInfo command")
-              replyTo ! InfoResponse(region)
+              replyTo ! Some(InfoResponse(region))
               println("region actor replied to ShowInfo command")
+              Behaviors.same
+
+            case ShowFullInfo(replyTo) =>
+              implicit val scheduler = context.system.scheduler
+              implicit val ec = context.executionContext
+
+              val futures = state.econActorIds.map({
+                case (actor, uuid) =>
+                  actor.ask(ShowInfo(_)) // Need to change this so the response to showinfo is actually the info
+                  //context.ask(actor, ShowInfo(_))
+              })
+
+              val aggregateInfo = Future.sequence(futures)
+
+              aggregateInfo.onComplete({
+                case Success(iter) =>
+                  val info = iter.flatMap(_.map(_.agent)).toList
+                  replyTo ! FullInfoResponse(region, info)
+                case _ =>
+                  println("whatever...")
+
+              })
               Behaviors.same
 
             case MakeBid(sendTo, resourceType, quantity, price) =>
               context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
                 case Success(AcceptBid()) =>
                   BuyFromSeller(resourceType, quantity, price)
-
                 case Success(RejectBid()) =>
-                  Behaviors.same
                   ActorNoOp()
                 case Failure(_) =>
-                  Behaviors.same
+                  ActorNoOp()
+                case _ =>
                   ActorNoOp()
 
               }
@@ -217,19 +260,30 @@ object RegionActor {
 
             case BuyFromSeller(resourceType, quantity, price) =>
               val updatedResources = region.storedResources + (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + quantity), Money -> (region.storedResources.getOrElse(Money, 0) - Math.multiplyExact(quantity, price)))
-              tick(region.copy(storedResources = updatedResources))
+              tick(state.copy(region = region.copy(storedResources = updatedResources)))
 
 
             case ReceiveWorkerBid(replyTo, price) =>
               if (region.population - calculateAssignedWorkers(region) > 0) {
                 replyTo ! AcceptWorkerBid() //TODO use price of food as floor for whether to accept
-                tick(region.copy(laborAssignments = region.laborAssignments + (replyTo -> (region.laborAssignments.getOrElse(replyTo, 0) + 1))))
+                tick(state.copy(
+                  region = region.copy(
+                    laborAssignments = region.laborAssignments + // TODO make this fetch more safe
+                      (state.econActorIds(replyTo) -> (region.laborAssignments.getOrElse(state.econActorIds(replyTo), 0) + 1)))))
               } else {
                 Behaviors.same
               }
 
             case ChangeSeason() =>
-              tick(region.copy(season = region.season.next))
+              tick(state.copy(region = region.copy(season = region.season.next)))
+
+            case BuildFarm =>
+              val farm = Farm.newFarm(2)
+              val uuid = UUID.randomUUID()
+              val actorRef = context.spawn(FarmActor(farm), uuid.toString)
+              tick(state.copy(
+                region = region.copy(laborAssignments = region.laborAssignments + (uuid.toString -> 0)),
+                econActorIds = state.econActorIds + (actorRef -> uuid.toString)))
 
             case ActorNoOp() =>
               Behaviors.same
@@ -259,7 +313,7 @@ object RegionActor {
       timers.startTimerWithFixedDelay("seasonChange", ChangeSeason(), 40.second)
 
 
-      tick(region)
+      tick(state)
     }
   }
 

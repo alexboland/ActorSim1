@@ -2,11 +2,11 @@ import akka.actor.typed.ActorRef
 
 trait GameActorCommand
 
-trait GameActor
+trait GameAgent
 
-trait EconActor extends GameActor
+trait EconAgent extends GameAgent
 
-trait ResourceProducer extends EconActor {
+trait ResourceProducer extends EconAgent {
   val workers: Int
   val maxWorkers: Int
   val resourceProduced: ResourceType
@@ -48,7 +48,7 @@ case class MakeBid(sendTo: ActorRef[EconActorCommand], resourceType: ResourceTyp
 case class ReceiveBid(replyTo: ActorRef[EconActorCommand], resourceType: ResourceType, quantity: Int, price: Int)
   extends EconActorCommand with ResourceProducerCommand with GovernmentActor.Command
 
-case class ShowInfo(replyTo: ActorRef[ManagerActor.Command])
+case class ShowInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]])
   extends GameActorCommand with RegionActor.Command with ResourceProducerCommand with GovernmentActor.Command
 
 case class GetBidPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType)

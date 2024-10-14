@@ -6,7 +6,7 @@ const RegionUI = ({ regionId, regionInfo, updateRegionInfo }) => {
   const pingRegion = async () => {
     setIsUpdating(true);
     try {
-      const response = await fetch(`http://localhost:8080/regions/ping/${regionId}`);
+      const response = await fetch(`http://localhost:8080/regions/${regionId}/ping`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

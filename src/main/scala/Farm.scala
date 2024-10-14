@@ -20,7 +20,26 @@ case class Farm(
   override val resourceProduced: ResourceType = Food
 }
 
+object Farm {
+  def newFarm(baseProduction: Int): Farm = {
+    Farm(
+      workers = 0,
+      storedFood = 0,
+      wage = 0,
+      storedMoney = 0,
+      maxWorkers = 10,
+      baseProduction = baseProduction,
+      inputs = Map(),
+      multipliers = Map())
+  }
+}
+
 object FarmActor {
+
+  case class InfoResponse(farm: Farm) extends GameInfo.InfoResponse {
+    override val agent = farm
+  }
+
   def apply(farm: Farm): Behavior[ResourceProducerCommand] = Behaviors.setup { context =>
     implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
     def tick(farm: Farm): Behavior[ResourceProducerCommand] = {

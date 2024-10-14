@@ -6,7 +6,7 @@ case class Government(
                        askPrices: Map[ResourceType, Int],
                        bidPrices: Map[ResourceType, Int],
                        regions: Map[String, ActorRef[RegionActor.Command]],
-                     )
+                     ) extends GameAgent
 
 object Government {
   def newGov() = Government(Map(), Map(Food -> 1), Map(Food -> 1), Map())
@@ -21,7 +21,9 @@ object GovernmentActor {
 
   case class SetAskPrice(resourceType: ResourceType, price: Int) extends Command
 
-  case class InfoResponse(government: Government) extends ManagerActor.Command
+  case class InfoResponse(government: Government) extends GameInfo.InfoResponse {
+    val agent = government
+  }
 
   case class AddRegion(uuid: String, ref: ActorRef[RegionActor.Command]) extends Command
 
@@ -35,7 +37,7 @@ object GovernmentActor {
           message match {
             case ShowInfo(replyTo) =>
               println("government actor got ShowInfo command")
-              replyTo ! InfoResponse(government)
+              replyTo ! Some(InfoResponse(government))
               println("government actor replied to ShowInfo command")
               Behaviors.same
 

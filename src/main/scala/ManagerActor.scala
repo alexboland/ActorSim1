@@ -11,23 +11,28 @@ object ManagerActor {
   case class CreateRandomRegion(replyTo: ActorRef[RegionCreated]) extends Command
   case class RegionCreated(actorRef: Either[String, ActorRef[RegionActor.Command]]) extends Command
   case class GetGovtInfo(replyTo: ActorRef[Option[Government]]) extends Command
-  case class GetRegionInfo(uuid: String, replyTo: ActorRef[Option[Region]]) extends Command
+  case class GetRegionInfo(uuid: String, replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
+
+  case class GetRegionActor(uuid: String, replyTo: ActorRef[Option[ActorRef[RegionActor.Command]]]) extends Command
   private case class InternalRegionResponse(regionOpt: Option[Region], replyTo: ActorRef[Option[Region]]) extends Command
   private case class InternalGovtResponse(govtOpt: Option[Government], replyTo: ActorRef[Option[Government]]) extends Command
 
   private var government: Option[ActorRef[GovernmentActor.Command]] = None
   private var regions = Map.empty[String, ActorRef[RegionActor.Command]]
 
-  implicit val timeout: Timeout = 3.seconds
+
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
+    implicit val ec = context.executionContext
+    implicit val timeout: Timeout = 3.seconds
+    implicit val scheduler = context.system.scheduler
     Behaviors.receiveMessage {
       case CreateGovernment(replyTo) =>
         println("====CREATE GOVT COMMAND=====")
         government match {
           case Some(actorRef) =>
             context.ask(actorRef, ShowInfo) {
-              case Success(GovernmentActor.InfoResponse(govt)) =>
+              case Success(Some(GovernmentActor.InfoResponse(govt))) =>
                 println("success with govt ping!")
                 InternalGovtResponse(Some(govt), replyTo)//Just do it without an error message for now and make it idempotent
               case Failure(f) =>
@@ -41,7 +46,7 @@ object ManagerActor {
             government = Some(actorRef)
             actorRef ! GovernmentActor.InitializeGov(Government.newGov())
             context.ask(actorRef, ShowInfo) {
-              case Success(GovernmentActor.InfoResponse(govt)) =>
+              case Success(Some(GovernmentActor.InfoResponse(govt))) =>
                 println("success with govt ping!")
                 InternalGovtResponse(Some(govt), replyTo) //Just do it without an error message for now and make it idempotent
               case Failure(f) =>
@@ -55,7 +60,7 @@ object ManagerActor {
         government match {
           case Some(actorRef) =>
             context.ask(actorRef, ShowInfo) {
-              case Success(GovernmentActor.InfoResponse(govt)) =>
+              case Success(Some(GovernmentActor.InfoResponse(govt))) =>
                 println("success with govt ping!")
                 InternalGovtResponse(Some(govt), replyTo) //Just do it without an error message for now and make it idempotent
               case Failure(f) =>
@@ -78,8 +83,9 @@ object ManagerActor {
         val regionId = java.util.UUID.randomUUID.toString
         government match {
           case Some(govt) =>
-            val region = Region.newRandomRegion(govt)
-            val actorRef = context.spawn(RegionActor(region), regionId)
+            val region = Region.newRandomRegion()
+            val state = RegionActorState(region = region, governmentActor = govt, econActorIds = Map())
+            val actorRef = context.spawn(RegionActor(state), regionId)
             regions += (actorRef.path.name -> actorRef)
             govt ! GovernmentActor.AddRegion(regionId, actorRef)
             replyTo ! RegionCreated(Right(actorRef))
@@ -94,18 +100,32 @@ object ManagerActor {
           case Some(regionActor) =>
             // Ask the RegionActor for info and forward the response
             println(s"manager actor pinging region ${uuid}")
-            context.ask(regionActor, ShowInfo) {
+
+            //implicit val timeout = 3.seconds
+            //implicit val ec = context.executionContext
+
+
+
+            //val infoFuture = regionActor.ask(ShowInfo(_))
+
+            regionActor ! ShowInfo(replyTo)
+
+            /*context.ask(regionActor, ShowInfo) {
               case Success(RegionActor.InfoResponse(region)) =>
                 println("success with region ping!")
                 InternalRegionResponse(Some(region), replyTo)
               case Failure(f) =>
                 println(s"failure due to ${f.toString}")
                 InternalRegionResponse(None, replyTo)
-            }
+            }*/
           case None =>
             // Region not found, reply with None
             replyTo ! None
         }
+        Behaviors.same
+
+      case GetRegionActor(uuid, replyTo) =>
+        replyTo ! regions.get(uuid)
         Behaviors.same
 
       case InternalRegionResponse(regionOpt, originalReplyTo) =>

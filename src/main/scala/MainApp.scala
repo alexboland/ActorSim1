@@ -1,5 +1,5 @@
 import JsonCodecs._
-import akka.actor.typed.ActorSystem
+import akka.actor.typed.{ActorRef, ActorSystem}
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.headers.HttpOrigin
@@ -81,21 +81,12 @@ object MainApp {
                   case util.Success(maybeRegion) =>
                     maybeRegion match {
                       case Some(govt) =>
-                        println(s"found govt")
-                        // Extract keys and convert to List[String]
-                        val keysList: List[String] = govt.regions.keys.toList
-
-                        // Convert each String in the list to a JsString and create a JsArray
-                        val jsArray = JsArray(keysList.map(JsString(_)): _*)
-
-                        // Construct a JsObject with the key "regions" mapped to the jsArray
                         val jsonResponse = govt.asJson.noSpaces //JsObject("regions" -> jsArray)
 
                         // Create an HTTP entity with application/json content type and the compact JSON print of the JsObject
                         HttpEntity(ContentTypes.`application/json`, jsonResponse)
                         complete(HttpEntity(ContentTypes.`application/json`, jsonResponse))
                       case None =>
-                        println(s"no government found")
                         complete(StatusCodes.NotFound -> JsObject("error" -> JsString("Region not found")).compactPrint)
                     }
                   case util.Failure(ex) =>
@@ -114,7 +105,6 @@ object MainApp {
             path("create") {
               post {
                 entity(as[String]) { jsonString =>
-                  println("=====BEGINNING REGIONS ROUTE=======")
                   val createdActorFuture = system.ask(ManagerActor.CreateRandomRegion(_))
                   onSuccess(createdActorFuture) { created =>
                     /*val jsonResponse = JsObject(
@@ -133,32 +123,54 @@ object MainApp {
                 }
               }
             },
-            path("ping" / Segment) { uuidString =>
-              get {
+            pathPrefix(Segment) { uuidString =>
                 val uuid = uuidString
-                println(s"pinging for ${uuid}")
-                implicit val timeout: Timeout = 3.seconds
-                val infoFuture: Future[Option[Region]] =
-                  system.ask(ref => ManagerActor.GetRegionInfo(uuid, ref))
+                concat (
+                  path("ping") { get {
+                    println(s"pinging for ${uuid}")
+                    implicit val timeout: Timeout = 3.seconds
+                    val infoFuture =
+                      system.ask(ref => ManagerActor.GetRegionInfo(uuid, ref))
 
-                onComplete(infoFuture) {
-                  case util.Success(maybeRegion) =>
-                      maybeRegion match {
-                        case Some(region) =>
-                          println(s"found region ${uuidString}")
-                          complete(StatusCodes.OK, HttpEntity(ContentTypes.`application/json`, region.asJson.noSpaces))
-                        case None =>
-                          println(s"no region found for ${uuidString}")
-                          complete(StatusCodes.NotFound -> JsObject("error" -> JsString("Region not found")).compactPrint)
+                    onComplete(infoFuture) {
+                      case util.Success(maybeRegion) =>
+                          maybeRegion match {
+                            case Some(RegionActor.InfoResponse(region)) =>
+                              println(s"found region ${uuidString}")
+                              complete(StatusCodes.OK, HttpEntity(ContentTypes.`application/json`, region.asJson.noSpaces))
+                            case None =>
+                              println(s"no region found for ${uuidString}")
+                              complete(StatusCodes.NotFound -> JsObject("error" -> JsString("Region not found")).compactPrint)
+                        }
+                      case util.Failure(ex) =>
+                        println(s"error finding region ${uuidString}: ${ex.getMessage}")
+                        complete(StatusCodes.InternalServerError -> s"An error occurred: ${ex.getMessage}")
+                      case _ =>
+                        println(s"Unexpected response type for ${uuidString}")
+                        complete(StatusCodes.InternalServerError -> "Unexpected response type")
                     }
-                  case util.Failure(ex) =>
-                    println(s"error finding region ${uuidString}: ${ex.getMessage}")
-                    complete(StatusCodes.InternalServerError -> s"An error occurred: ${ex.getMessage}")
-                  case _ =>
-                    println(s"Unexpected response type for ${uuidString}")
-                    complete(StatusCodes.InternalServerError -> "Unexpected response type")
-                }
-            }})
+                  }},
+                  pathPrefix("build" / Segment) { structure =>
+                    post {
+                      val regionUuid = uuidString
+                      if (structure.equals("farm")) {
+                        implicit val timeout: Timeout = 3.seconds
+                        val regionFuture: Future[Option[ActorRef[RegionActor.Command]]] = system.ask(ref => ManagerActor.GetRegionActor(uuid, ref))
+                        onSuccess(regionFuture) {
+                          case Some(actorRef) =>
+                            actorRef ! RegionActor.BuildFarm
+                            complete(StatusCodes.OK)
+                          case(None) =>
+                            complete(StatusCodes.OK)
+                        }
+                        complete(StatusCodes.OK)
+                      } else {
+                        complete(StatusCodes.OK)
+                      }
+                    }
+                  }
+                )
+            })
         })
       }
     }

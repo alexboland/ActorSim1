@@ -9,6 +9,8 @@ import scala.concurrent.duration._
 
 // JSON encoders and decoders
 object JsonCodecs {
+
+
   implicit val seasonEncoder: Encoder[Season] = Encoder.encodeString.contramap[Season](_.toString)
   implicit val seasonDecoder: Decoder[Season] = Decoder.decodeString.emap {
     case "Spring" => Right(Region.Spring)
@@ -39,12 +41,11 @@ object JsonCodecs {
   // Manual encoder for Region
   implicit val regionEncoder: Encoder[Region] = new Encoder[Region] {
     final def apply(region: Region): Json = Json.obj(
-      "laborAssignments" -> Json.arr(),
+      "laborAssignments" -> region.laborAssignments.asJson,
       "storedResources" -> region.storedResources.asJson,
       "population" -> region.population.asJson,
       "baseProduction" -> region.baseProduction.asJson,
-      "season" -> region.season.asJson,
-      "government" -> Json.fromString("")
+      "season" -> region.season.asJson
     )
   }
 
