@@ -11,6 +11,7 @@ import spray.json.{JsObject, JsString}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 
 object RegionRoutes {
@@ -78,17 +79,24 @@ object RegionRoutes {
           },
           pathPrefix("build" / Segment) { structure =>
             post {
-              val regionUuid = uuidString
+              println(s"building ${structure} for region ${uuid}")
               if (structure.equals("farm")) {
                 val regionFuture: Future[Option[ActorRef[RegionActor.Command]]] = system.ask(ref => ManagerActor.GetRegionActor(uuid, ref))
-                onSuccess(regionFuture) {
-                  case Some(actorRef) =>
-                    actorRef ! RegionActor.BuildFarm
-                    complete(StatusCodes.OK)
-                  case (None) =>
+                onComplete(regionFuture) {
+                  case Success(response) =>
+                    response match {
+                      case Some(actorRef) =>
+                        actorRef ! RegionActor.BuildFarm()
+                        complete(StatusCodes.OK)
+                      case (None) =>
+                        complete(StatusCodes.NotFound, s"couldn't find region ${uuid}")
+                    }
+                  case Failure(error) =>
+                    println(error)
+                    complete(error)
+                  case _ =>
                     complete(StatusCodes.OK)
                 }
-                complete(StatusCodes.OK)
               } else {
                 complete(StatusCodes.OK)
               }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const RegionUI = ({ regionId, regionInfo, updateRegionInfo }) => {
+const RegionUI = ({ regionId, regionInfo, updateRegionInfo, onViewDetails }) => {
   const [isUpdating, setIsUpdating] = useState(false);
 
   const pingRegion = async () => {
@@ -11,7 +11,6 @@ const RegionUI = ({ regionId, regionInfo, updateRegionInfo }) => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
-      console.log(data);
       updateRegionInfo(regionId, data);
     } catch (error) {
       console.error(`Failed to ping region ${regionId}:`, error);
@@ -32,24 +31,23 @@ const RegionUI = ({ regionId, regionInfo, updateRegionInfo }) => {
         ...styles.regionBox,
         ...(isUpdating ? styles.updating : {}),
       }}
-      onClick={pingRegion}
     >
       <h3 style={styles.regionTitle}>Region: {regionId}</h3>
       <p style={styles.regionInfo}>Population: {regionInfo.population || 'Loading...'}</p>
       <p style={styles.regionInfo}>Season: {regionInfo.season || 'Loading...'}</p>
       <div style={styles.resourcesSection}>
-      <h4 style={styles.resourcesTitle}>Base Production:</h4>
-              <ul style={styles.resourcesList}>
-                {regionInfo.baseProduction ? (
-                  Object.entries(regionInfo.baseProduction).map(([resource, amount]) => (
-                    <li key={resource} style={styles.resourceItem}>
-                      {resource}: {amount}
-                    </li>
-                  ))
-                ) : (
-                  <li>Loading resources...</li>
-                )}
-              </ul>
+        <h4 style={styles.resourcesTitle}>Base Production:</h4>
+        <ul style={styles.resourcesList}>
+          {regionInfo.baseProduction ? (
+            Object.entries(regionInfo.baseProduction).map(([resource, amount]) => (
+              <li key={resource} style={styles.resourceItem}>
+                {resource}: {amount}
+              </li>
+            ))
+          ) : (
+            <li>Loading resources...</li>
+          )}
+        </ul>
         <h4 style={styles.resourcesTitle}>Stored Resources:</h4>
         <ul style={styles.resourcesList}>
           {regionInfo.storedResources ? (
@@ -62,6 +60,14 @@ const RegionUI = ({ regionId, regionInfo, updateRegionInfo }) => {
             <li>Loading resources...</li>
           )}
         </ul>
+      </div>
+      <div style={styles.buttonContainer}>
+        <button onClick={pingRegion} style={styles.button}>
+          Update
+        </button>
+        <button onClick={() => onViewDetails(regionId)} style={styles.button}>
+          View Details
+        </button>
       </div>
     </div>
   );
@@ -106,6 +112,23 @@ const styles = {
     fontSize: '0.9em',
     color: '#718096',
     marginBottom: '3px',
+  },
+  buttonContainer: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginTop: '15px',
+  },
+  button: {
+    padding: '8px 12px',
+    background: '#4a5568',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'background 0.3s ease',
+    '&:hover': {
+      background: '#2d3748',
+    },
   },
 };
 

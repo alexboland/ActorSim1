@@ -101,7 +101,7 @@ object RegionActor {
   case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
   case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
 
-  case object BuildFarm extends Command
+  case class BuildFarm() extends Command
 
   case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
 
@@ -219,9 +219,7 @@ object RegionActor {
               tick(state.copy(region = region.copy(population = newPop)))
 
             case ShowInfo(replyTo) =>
-              println("region actor got ShowInfo command")
               replyTo ! Some(InfoResponse(region))
-              println("region actor replied to ShowInfo command")
               Behaviors.same
 
             case ShowFullInfo(replyTo) =>
@@ -230,8 +228,7 @@ object RegionActor {
 
               val futures = state.econActorIds.map({
                 case (actor, uuid) =>
-                  actor.ask(ShowInfo(_)) // Need to change this so the response to showinfo is actually the info
-                  //context.ask(actor, ShowInfo(_))
+                  actor.ask(ShowInfo(_))
               })
 
               val aggregateInfo = Future.sequence(futures)
@@ -279,7 +276,7 @@ object RegionActor {
             case ChangeSeason() =>
               tick(state.copy(region = region.copy(season = region.season.next)))
 
-            case BuildFarm =>
+            case BuildFarm() =>
               val farm = Farm.newFarm(2)
               val uuid = UUID.randomUUID()
               val actorRef = context.spawn(FarmActor(farm), uuid.toString)

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import RegionUI from './RegionUI';
+import RegionDetailsUI from './RegionDetailsUI';
 
 const GovernmentUI = ({ initialGovernment }) => {
   const [government, setGovernment] = useState(null);
   const [regions, setRegions] = useState({});
   const [foodPrice, setFoodPrice] = useState(1);
+  const [selectedRegion, setSelectedRegion] = useState(null);
 
   useEffect(() => {
     if (initialGovernment && initialGovernment.regions) {
@@ -69,6 +71,14 @@ const GovernmentUI = ({ initialGovernment }) => {
     }));
   };
 
+  const handleViewDetails = (regionId) => {
+    setSelectedRegion(regionId);
+  };
+
+  const handleCloseDetails = () => {
+    setSelectedRegion(null);
+  };
+
   if (!government) {
     return <div>Loading government data...</div>;
   }
@@ -98,11 +108,22 @@ const GovernmentUI = ({ initialGovernment }) => {
               regionId={regionId}
               regionInfo={regions[regionId]}
               updateRegionInfo={updateRegionInfo}
+              onViewDetails={handleViewDetails}
             />
           ))}
         </div>
       ) : (
         <p>No regions available.</p>
+      )}
+      {selectedRegion && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <RegionDetailsUI
+              regionId={selectedRegion}
+              onClose={handleCloseDetails}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -153,6 +174,25 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
     gap: '20px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '8px',
+    maxWidth: '80%',
+    maxHeight: '80%',
+    overflow: 'auto',
   },
 };
 

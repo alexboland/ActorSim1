@@ -70,9 +70,9 @@ object FarmActor {
           case ProduceResource() =>
             tick(farm.copy(storedFood = farm.storedFood + Math.multiplyExact(farm.baseProduction, farm.workers)))
 
-          /*case ShowInfo(replyTo) =>
-            replyTo ! ResourceProducer.InfoResponse(farm)
-            Behaviors.same*/
+          case ShowInfo(replyTo) =>
+            replyTo ! Some(InfoResponse(farm))
+            Behaviors.same
 
           case MakeWorkerBid(sendTo, wage) =>
             context.ask(sendTo, RegionActor.ReceiveWorkerBid(_, wage)) {
