@@ -1,4 +1,7 @@
+package agents
+
 import akka.actor.typed.ActorRef
+import middleware.GameInfo
 
 trait GameActorCommand
 

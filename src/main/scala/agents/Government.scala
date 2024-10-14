@@ -1,5 +1,8 @@
+package agents
+
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
+import middleware.GameInfo
 
 case class Government(
                        storedResources: Map[ResourceType, Int],

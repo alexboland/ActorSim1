@@ -1,6 +1,10 @@
+package agents
+
+import agents.RegionActor.ShowFullInfo
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout
+import middleware.GameInfo
 
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
@@ -12,6 +16,7 @@ object ManagerActor {
   case class RegionCreated(actorRef: Either[String, ActorRef[RegionActor.Command]]) extends Command
   case class GetGovtInfo(replyTo: ActorRef[Option[Government]]) extends Command
   case class GetRegionInfo(uuid: String, replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
+  case class GetFullRegionInfo(uuid: String, replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
 
   case class GetRegionActor(uuid: String, replyTo: ActorRef[Option[ActorRef[RegionActor.Command]]]) extends Command
   private case class InternalRegionResponse(regionOpt: Option[Region], replyTo: ActorRef[Option[Region]]) extends Command
@@ -100,29 +105,25 @@ object ManagerActor {
           case Some(regionActor) =>
             // Ask the RegionActor for info and forward the response
             println(s"manager actor pinging region ${uuid}")
-
-            //implicit val timeout = 3.seconds
-            //implicit val ec = context.executionContext
-
-
-
-            //val infoFuture = regionActor.ask(ShowInfo(_))
-
             regionActor ! ShowInfo(replyTo)
-
-            /*context.ask(regionActor, ShowInfo) {
-              case Success(RegionActor.InfoResponse(region)) =>
-                println("success with region ping!")
-                InternalRegionResponse(Some(region), replyTo)
-              case Failure(f) =>
-                println(s"failure due to ${f.toString}")
-                InternalRegionResponse(None, replyTo)
-            }*/
           case None =>
             // Region not found, reply with None
             replyTo ! None
         }
         Behaviors.same
+
+      case GetFullRegionInfo(uuid, replyTo) =>
+        regions.get(uuid) match {
+          case Some(regionActor) =>
+            // Ask the RegionActor for info and forward the response
+            println(s"manager actor pinging region ${uuid}")
+            regionActor ! ShowFullInfo(replyTo)
+          case None =>
+            // Region not found, reply with None
+            replyTo ! None
+        }
+        Behaviors.same
+
 
       case GetRegionActor(uuid, replyTo) =>
         replyTo ! regions.get(uuid)

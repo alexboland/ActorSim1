@@ -1,3 +1,5 @@
+package agents
+
 trait ResourceType {
   override def toString: String = this.getClass.getSimpleName.dropRight(1)
 }

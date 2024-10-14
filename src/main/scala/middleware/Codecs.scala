@@ -1,11 +1,10 @@
-import Region.Season
-import akka.http.scaladsl.server.Directives._
-import io.circe._
-import io.circe.generic.semiauto._
-import io.circe.parser._
-import io.circe.syntax._
+package middleware
 
-import scala.concurrent.duration._
+import agents.Region.Season
+import agents._
+import cats.syntax.either._
+import io.circe._
+import io.circe.syntax._
 
 // JSON encoders and decoders
 object JsonCodecs {
@@ -58,6 +57,33 @@ object JsonCodecs {
       "regions" -> government.regions.keys.asJson
     )
   }
+
+  implicit val gameAgentEncoder: Encoder[GameAgent] = Encoder.instance {
+    case region: Region => region.asJson
+    case farm: Farm => farm.asJson
+    case _ => Json.obj()
+  }
+
+  object ResourceProducerEncoderHelper {
+    def encodeCommon(rp: ResourceProducer): Json = Json.obj(
+      "workers" -> Json.fromInt(rp.workers),
+      "maxWorkers" -> Json.fromInt(rp.maxWorkers),
+      "resourceProduced" -> rp.resourceProduced.asJson,
+      "inputs" -> rp.inputs.asJson,
+      "multipliers" -> rp.multipliers.asJson,
+      "baseProduction" -> Json.fromInt(rp.baseProduction)
+    )
+
+    def combineEncoders[A <: ResourceProducer](specific: A => Json): Encoder[A] =
+      (a: A) => ResourceProducerEncoderHelper.encodeCommon(a).deepMerge(specific(a))
+  }
+
+  implicit val farmEncoder: Encoder[Farm] = ResourceProducerEncoderHelper.combineEncoders({ farm =>
+    Json.obj(
+      "storedFood" -> Json.fromInt(farm.storedFood),
+      "type" -> Json.fromString("Farm")
+    )
+  })
 
   // Manual decoder for Region
   /*implicit val regionDecoder: Decoder[Region] = new Decoder[Region] {

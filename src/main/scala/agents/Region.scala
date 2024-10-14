@@ -1,8 +1,10 @@
+package agents
+
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout
-import spray.json.DefaultJsonProtocol._
+import middleware.GameInfo
 
 import java.util.UUID
 import scala.concurrent.Future
@@ -101,7 +103,7 @@ object RegionActor {
 
   case object BuildFarm extends Command
 
-  case class ShowFullInfo(replyTo: ActorRef[GameInfo.InfoResponse]) extends Command
+  case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
 
   def apply(state: RegionActorState): Behavior[Command] = Behaviors.setup { context =>
     implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
@@ -237,7 +239,7 @@ object RegionActor {
               aggregateInfo.onComplete({
                 case Success(iter) =>
                   val info = iter.flatMap(_.map(_.agent)).toList
-                  replyTo ! FullInfoResponse(region, info)
+                  replyTo ! Some(FullInfoResponse(region, info))
                 case _ =>
                   println("whatever...")
 

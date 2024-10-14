@@ -1,8 +1,9 @@
+package agents
+
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.util.Timeout
-import spray.json.DefaultJsonProtocol._
+import middleware.GameInfo
 
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}

@@ -1,7 +1,7 @@
+package agents
+
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-import spray.json.DefaultJsonProtocol._
 
 import scala.concurrent.duration.DurationInt
 
