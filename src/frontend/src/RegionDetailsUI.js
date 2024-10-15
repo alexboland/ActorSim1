@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import FarmUI from './FarmUI';
 
 const RegionDetailsUI = ({ regionId, onClose }) => {
   const [regionDetails, setRegionDetails] = useState(null);
@@ -12,7 +13,6 @@ const RegionDetailsUI = ({ regionId, onClose }) => {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        console.log(data);
         setRegionDetails(data);
       } catch (error) {
         console.error(`Failed to fetch details for region ${regionId}:`, error);
@@ -45,11 +45,26 @@ const RegionDetailsUI = ({ regionId, onClose }) => {
     return <div>Loading region details...</div>;
   }
 
+  const renderAgentCard = (agent) => {
+    switch (agent.type) {
+      case 'Farm':
+        return <FarmUI key={agent.id} farm={agent} />;
+      // Add cases for other agent types here
+      default:
+        return (
+          <div key={agent.id} style={styles.defaultCard}>
+            <h3>{agent.type}</h3>
+            <p>Population: {agent.population}</p>
+          </div>
+        );
+    }
+  };
+
   return (
     <div style={styles.container}>
       <button onClick={onClose} style={styles.closeButton}>×</button>
       <h2 style={styles.title}>Detailed View: Region {regionId}</h2>
-      
+
       <div style={styles.section}>
         <h3>Region Information</h3>
         <p>Population: {regionDetails.region.population}</p>
@@ -74,11 +89,9 @@ const RegionDetailsUI = ({ regionId, onClose }) => {
 
       <div style={styles.section}>
         <h3>Agents</h3>
-        <ul>
-          {regionDetails.agents.map((agent, index) => (
-            <li key={index}>{agent.type}</li>
-          ))}
-        </ul>
+        <div style={styles.agentGrid}>
+          {regionDetails.agents.map((agent) => renderAgentCard(agent))}
+        </div>
       </div>
 
       <div style={styles.section}>
@@ -97,6 +110,8 @@ const styles = {
     borderRadius: '8px',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     position: 'relative',
+    maxWidth: '800px',
+    margin: '0 auto',
   },
   title: {
     fontSize: '1.5em',
@@ -123,6 +138,17 @@ const styles = {
     borderRadius: '4px',
     cursor: 'pointer',
     marginRight: '10px',
+  },
+  agentGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: '15px',
+  },
+  defaultCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: '8px',
+    padding: '15px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
 };
 
