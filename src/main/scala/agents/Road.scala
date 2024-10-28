@@ -3,7 +3,7 @@ package agents
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 
-case class Road(origin: ActorRef[EconActorCommand], destination: ActorRef[EconActorCommand]) extends GameAgent
+case class Road(id: String, origin: ActorRef[EconActorCommand], destination: ActorRef[EconActorCommand]) extends GameAgent
 
 object RoadActor {
   trait Command extends GameActorCommand

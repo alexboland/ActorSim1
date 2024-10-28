@@ -85,14 +85,13 @@ object ManagerActor {
 
 
       case CreateRandomRegion(replyTo) =>
-        val regionId = java.util.UUID.randomUUID.toString
         government match {
           case Some(govt) =>
             val region = Region.newRandomRegion()
             val state = RegionActorState(region = region, governmentActor = govt, econActorIds = Map())
-            val actorRef = context.spawn(RegionActor(state), regionId)
+            val actorRef = context.spawn(RegionActor(state), region.id)
             regions += (actorRef.path.name -> actorRef)
-            govt ! GovernmentActor.AddRegion(regionId, actorRef)
+            govt ! GovernmentActor.AddRegion(region.id, actorRef)
             replyTo ! RegionCreated(Right(actorRef))
           case None =>
             replyTo ! RegionCreated(Left("cannot create region without government"))

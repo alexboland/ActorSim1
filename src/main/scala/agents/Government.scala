@@ -4,7 +4,10 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import middleware.GameInfo
 
+import java.util.UUID
+
 case class Government(
+                       id: String,
                        storedResources: Map[ResourceType, Int],
                        askPrices: Map[ResourceType, Int],
                        bidPrices: Map[ResourceType, Int],
@@ -12,7 +15,7 @@ case class Government(
                      ) extends GameAgent
 
 object Government {
-  def newGov() = Government(Map(), Map(Food -> 1), Map(Food -> 1), Map())
+  def newGov() = Government(UUID.randomUUID().toString, Map(), Map(Food -> 1), Map(Food -> 1), Map())
 }
 
 object GovernmentActor {

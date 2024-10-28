@@ -1,14 +1,21 @@
 package agents
 
-import akka.actor.typed.Behavior
+import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
 import middleware.GameInfo
 
+import java.util.UUID
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
 
+case class FarmActorState(
+                             farm: Farm,
+                             econActors: Map[String, ActorRef[BankActor.Command]],
+                           )
+
 case class Farm(
+  id: String,
   workers: Int,
   storedFood: Int,
   wage: Int,
@@ -17,6 +24,7 @@ case class Farm(
   baseProduction: Int,
   inputs: Map[ResourceType, Int],
   multipliers: Map[ResourceType, Int],
+  outstandingBonds: Set[Bond]
 ) extends ResourceProducer {
   override val resourceProduced: ResourceType = Food
 }
@@ -24,6 +32,7 @@ case class Farm(
 object Farm {
   def newFarm(baseProduction: Int): Farm = {
     Farm(
+      id = UUID.randomUUID().toString,
       workers = 0,
       storedFood = 0,
       wage = 0,
@@ -31,7 +40,8 @@ object Farm {
       maxWorkers = 10,
       baseProduction = baseProduction,
       inputs = Map(),
-      multipliers = Map())
+      multipliers = Map(),
+      outstandingBonds = Set())
   }
 }
 
@@ -41,23 +51,25 @@ object FarmActor {
     override val agent = farm
   }
 
-  def apply(farm: Farm): Behavior[ResourceProducerCommand] = Behaviors.setup { context =>
+  def apply(state: FarmActorState): Behavior[ResourceProducerCommand] = Behaviors.setup { context =>
     implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
-    def tick(farm: Farm): Behavior[ResourceProducerCommand] = {
+    def tick(state: FarmActorState): Behavior[ResourceProducerCommand] = {
+      val farm = state.farm
       Behaviors.receive { (context, message) =>
         message match {
           case ReceiveBid(replyTo, resourceType, quantity, price) =>
             if (resourceType != Food) {
               replyTo ! RejectBid()
-              tick(farm)
+              tick(state.copy(farm = farm))
             } else if (farm.storedFood < quantity) {
               replyTo ! RejectBid()
-              tick(farm) // Insufficient resources to sell, do nothing
+              tick(state.copy(farm = farm)) // Insufficient resources to sell, do nothing
               // TODO create some kind of threshold to dictate how much capacity it wants to retain
             } else {
               // Currently dumb behavior where it doesn't negotiate
               replyTo ! AcceptBid()
-              tick(farm.copy(storedFood = farm.storedFood - quantity, storedMoney = farm.storedMoney + Math.multiplyExact(quantity, price)))
+              tick(state.copy(
+                farm = farm.copy(storedFood = farm.storedFood - quantity, storedMoney = farm.storedMoney + Math.multiplyExact(quantity, price))))
             }
 
           case PayWages() =>
@@ -65,10 +77,11 @@ object FarmActor {
             if (totalPayment > farm.storedMoney) {
               // Take out loan from bank or lose workers or something, still working on it
             }
-            tick(farm.copy(storedMoney = farm.storedMoney - totalPayment))
+            tick(state.copy(farm = farm.copy(storedMoney = farm.storedMoney - totalPayment)))
 
           case ProduceResource() =>
-            tick(farm.copy(storedFood = farm.storedFood + Math.multiplyExact(farm.baseProduction, farm.workers)))
+            tick(state.copy(
+              farm = farm.copy(storedFood = farm.storedFood + Math.multiplyExact(farm.baseProduction, farm.workers))))
 
           case ShowInfo(replyTo) =>
             replyTo ! Some(InfoResponse(farm))
@@ -77,20 +90,43 @@ object FarmActor {
           case MakeWorkerBid(sendTo, wage) =>
             context.ask(sendTo, RegionActor.ReceiveWorkerBid(_, wage)) {
               case Success(AcceptWorkerBid()) =>
-                Behaviors.same
                 AddWorker()
               case Success(RejectWorkerBid()) =>
-                Behaviors.same
                 ActorNoOp()
               case Failure(_) =>
-                Behaviors.same
                 ActorNoOp()
 
             }
             Behaviors.same
 
           case AddWorker() =>
-            tick(farm.copy(workers = farm.workers + 1))
+            tick(state = state.copy(farm = farm.copy(workers = farm.workers + 1)))
+
+          case IssueBond(principal, interest, issueTo) =>
+             state.econActors.get(issueTo) match {
+                case Some(actorRef) =>
+                  val bond = Bond(principal, interest, issueTo, farm.id)
+                  context.ask(actorRef, ReceiveBond(bond, _, context.self)) {
+                    case Success(true) =>
+                      AddOutstandingBond(bond, issueTo)
+                    case Success(false) =>
+                      ActorNoOp()
+                    case Failure(err) =>
+                      println(s"failure in command IssueBond in farm ${farm.id}: ${err}")
+                      ActorNoOp()
+                    case _ =>
+                      ActorNoOp()
+                  }
+                case _ =>
+                  println(s"couldn't find actor ref for bank ${issueTo}")
+              }
+            Behaviors.same
+
+          case AddOutstandingBond(bond, issuedTo) =>
+            val newStoredMoney = state.farm.storedMoney + bond.principal
+            val newOutstandingBonds = state.farm.outstandingBonds + bond
+
+            tick(state = state.copy(farm = state.farm.copy(storedMoney = newStoredMoney, outstandingBonds = newOutstandingBonds)))
 
           case _ =>
             Behaviors.same
@@ -101,7 +137,7 @@ object FarmActor {
     Behaviors.withTimers { timers =>
       timers.startTimerWithFixedDelay("production", ProduceResource(), 8.second)
 
-      tick(farm)
+      tick(state)
     }
   }
 }

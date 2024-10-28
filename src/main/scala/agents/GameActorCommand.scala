@@ -5,7 +5,9 @@ import middleware.GameInfo
 
 trait GameActorCommand
 
-trait GameAgent
+trait GameAgent {
+  val id: String
+}
 
 trait EconAgent extends GameAgent
 
@@ -41,9 +43,16 @@ case class AcceptBid() extends EconActorCommand
 
 case class RejectBid() extends EconActorCommand
 
-case class IssueBond() extends EconActorCommand with ResourceProducerCommand with RegionActor.Command
+case class IssueBond(principal: Int, interestRate: Double, issueTo: String)
+  extends EconActorCommand with ResourceProducerCommand with BankActor.Command with RegionActor.Command
 
-case class ReceiveBond() extends GovernmentActor.Command
+case class ReceiveBond(bond: Bond, replyTo: ActorRef[Boolean], issuedFrom: ActorRef[ResourceProducerCommand])
+  extends GovernmentActor.Command with BankActor.Command
+case class AddBond() extends BankActor.Command with GovernmentActor.Command
+
+case class AddOutstandingBond(bond: Bond, issuedTo: String) extends ResourceProducerCommand
+
+case class AddFunds(amount: Int) extends ResourceProducerCommand with BankActor.Command
 
 case class MakeBid(sendTo: ActorRef[EconActorCommand], resourceType: ResourceType, quantity: Int, price: Int)
   extends EconActorCommand with ResourceProducerCommand with RegionActor.Command with GovernmentActor.Command
@@ -52,7 +61,7 @@ case class ReceiveBid(replyTo: ActorRef[EconActorCommand], resourceType: Resourc
   extends EconActorCommand with ResourceProducerCommand with GovernmentActor.Command
 
 case class ShowInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]])
-  extends GameActorCommand with RegionActor.Command with ResourceProducerCommand with GovernmentActor.Command
+  extends GameActorCommand with RegionActor.Command with ResourceProducerCommand with GovernmentActor.Command with BankActor.Command
 
 case class GetBidPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType)
   extends EconActorCommand with ResourceProducerCommand with GovernmentActor.Command

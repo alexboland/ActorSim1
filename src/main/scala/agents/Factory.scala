@@ -6,13 +6,14 @@ import akka.actor.typed.scaladsl.Behaviors
 import scala.concurrent.duration.DurationInt
 
 case class Factory(
+                 id: String,
                  workers: Int,
                  resourceProduced: ResourceType,
                  maxWorkers: Int,
                  storedResources: Map[ResourceType, Int],
                  inputs: Map[ResourceType, Int],
                  multipliers: Map[ResourceType, Int],
-                 baseProduction: Int,
+                 baseProduction: Int
                ) extends ResourceProducer
 
 object FactoryActor {

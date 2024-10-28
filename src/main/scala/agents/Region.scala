@@ -18,6 +18,7 @@ case class RegionActorState(
                            )
 
 case class Region(
+               id: String,
                laborAssignments: Map[String, Int],
                storedResources: Map[ResourceType, Int],
                population: Int,
@@ -56,6 +57,7 @@ object Region {
     val woodProduction = Math.round(6 * Math.random()) * 0.25
 
     Region(
+      id = UUID.randomUUID().toString,
       laborAssignments = Map(),
       population = 100,
       storedResources = Map(
@@ -278,11 +280,10 @@ object RegionActor {
 
             case BuildFarm() =>
               val farm = Farm.newFarm(2)
-              val uuid = UUID.randomUUID()
-              val actorRef = context.spawn(FarmActor(farm), uuid.toString)
+              val actorRef = context.spawn(FarmActor(FarmActorState(farm, Map())), farm.id.toString)
               tick(state.copy(
-                region = region.copy(laborAssignments = region.laborAssignments + (uuid.toString -> 0)),
-                econActorIds = state.econActorIds + (actorRef -> uuid.toString)))
+                region = region.copy(laborAssignments = region.laborAssignments + (farm.id.toString -> 0)),
+                econActorIds = state.econActorIds + (actorRef -> farm.id.toString)))
 
             case ActorNoOp() =>
               Behaviors.same
