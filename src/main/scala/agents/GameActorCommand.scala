@@ -24,7 +24,7 @@ trait EconActorCommand extends GameActorCommand
 
 trait ResourceProducerCommand extends EconActorCommand
 
-case class ActorNoOp() extends GameActorCommand with RegionActor.Command with ResourceProducerCommand
+case class ActorNoOp() extends GameActorCommand with RegionActor.Command with ResourceProducerCommand with BankActor.Command
 
 case class MakeWorkerBid(sendTo: ActorRef[RegionActor.Command], wage: Int)
   extends ResourceProducerCommand
@@ -48,11 +48,10 @@ case class IssueBond(principal: Int, interestRate: Double, issueTo: String)
 
 case class ReceiveBond(bond: Bond, replyTo: ActorRef[Boolean], issuedFrom: ActorRef[ResourceProducerCommand])
   extends GovernmentActor.Command with BankActor.Command
-case class AddBond() extends BankActor.Command with GovernmentActor.Command
 
 case class AddOutstandingBond(bond: Bond, issuedTo: String) extends ResourceProducerCommand
 
-case class AddFunds(amount: Int) extends ResourceProducerCommand with BankActor.Command
+case class PayBond(bond: Bond, amount: Int, replyTo: ActorRef[Int]) extends ResourceProducerCommand
 
 case class MakeBid(sendTo: ActorRef[EconActorCommand], resourceType: ResourceType, quantity: Int, price: Int)
   extends EconActorCommand with ResourceProducerCommand with RegionActor.Command with GovernmentActor.Command

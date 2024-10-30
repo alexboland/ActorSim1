@@ -105,6 +105,8 @@ object RegionActor {
 
   case class BuildFarm() extends Command
 
+  case class BuildBank() extends Command
+
   case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
 
   def apply(state: RegionActorState): Behavior[Command] = Behaviors.setup { context =>
@@ -278,12 +280,18 @@ object RegionActor {
             case ChangeSeason() =>
               tick(state.copy(region = region.copy(season = region.season.next)))
 
+            /*case BuildBank() =>
+              val bank = Bank.newBank()
+              val actorRef = context.spawn(BankActor(BankActorState(bank, Map())), bank.id)
+              tick(state.copy(econActorIds = state.econActorIds + (actorRef -> bank.id)))*/
+
+
             case BuildFarm() =>
               val farm = Farm.newFarm(2)
-              val actorRef = context.spawn(FarmActor(FarmActorState(farm, Map())), farm.id.toString)
+              val actorRef = context.spawn(FarmActor(FarmActorState(farm, Map())), farm.id)
               tick(state.copy(
-                region = region.copy(laborAssignments = region.laborAssignments + (farm.id.toString -> 0)),
-                econActorIds = state.econActorIds + (actorRef -> farm.id.toString)))
+                region = region.copy(laborAssignments = region.laborAssignments + (farm.id -> 0)),
+                econActorIds = state.econActorIds + (actorRef -> farm.id)))
 
             case ActorNoOp() =>
               Behaviors.same

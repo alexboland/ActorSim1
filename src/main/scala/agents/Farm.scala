@@ -24,7 +24,7 @@ case class Farm(
   baseProduction: Int,
   inputs: Map[ResourceType, Int],
   multipliers: Map[ResourceType, Int],
-  outstandingBonds: Set[Bond]
+  outstandingBonds: Map[String, Bond]
 ) extends ResourceProducer {
   override val resourceProduced: ResourceType = Food
 }
@@ -41,7 +41,7 @@ object Farm {
       baseProduction = baseProduction,
       inputs = Map(),
       multipliers = Map(),
-      outstandingBonds = Set())
+      outstandingBonds = Map())
   }
 }
 
@@ -105,7 +105,7 @@ object FarmActor {
           case IssueBond(principal, interest, issueTo) =>
              state.econActors.get(issueTo) match {
                 case Some(actorRef) =>
-                  val bond = Bond(principal, interest, issueTo, farm.id)
+                  val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, issueTo, farm.id)
                   context.ask(actorRef, ReceiveBond(bond, _, context.self)) {
                     case Success(true) =>
                       AddOutstandingBond(bond, issueTo)
@@ -124,9 +124,21 @@ object FarmActor {
 
           case AddOutstandingBond(bond, issuedTo) =>
             val newStoredMoney = state.farm.storedMoney + bond.principal
-            val newOutstandingBonds = state.farm.outstandingBonds + bond
+            val newOutstandingBonds = state.farm.outstandingBonds + (bond.id -> bond)
 
             tick(state = state.copy(farm = state.farm.copy(storedMoney = newStoredMoney, outstandingBonds = newOutstandingBonds)))
+
+          case PayBond(bond, amount, replyTo) =>
+            val amountToPay = Math.min(state.farm.storedMoney, amount) // For now just have it pay what it can without defaults
+            val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay)*bond.interestRate).toInt)
+            val newOutstandingBonds = if (updatedBond.totalOutstanding <= 0) {
+              state.farm.outstandingBonds - bond.id
+            } else {
+              state.farm.outstandingBonds + (bond.id -> updatedBond)
+            }
+            replyTo ! amountToPay
+            tick(state = state.copy(farm = farm.copy(storedMoney = state.farm.storedMoney - amountToPay, outstandingBonds = newOutstandingBonds)))
+
 
           case _ =>
             Behaviors.same
