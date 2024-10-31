@@ -11,6 +11,12 @@ trait GameAgent {
 
 trait EconAgent extends GameAgent
 
+object EconAgent {
+  trait Command extends GameActorCommand
+}
+
+type EconActor = ActorRef[BankActor.Command] | ActorRef[GovernmentActor.Command] | ActorRef[RegionActor.Command] | ActorRef[FarmActor.Command] // Expand on this as necessary
+
 trait ResourceProducer extends EconAgent {
   val workers: Int
   val maxWorkers: Int
@@ -20,9 +26,9 @@ trait ResourceProducer extends EconAgent {
   val baseProduction: Int
 }
 
-trait EconActorCommand
-
-trait ResourceProducerCommand
+object ResourceProducer {
+  trait Command
+}
 
 trait BankingCommand
 
@@ -34,46 +40,46 @@ case class CollectBondPayment(bond: Bond, amount: Int) extends BankingCommand
 
 case class DepositBondPayment(bond: Bond, amount: Int) extends BankingCommand
 
-case class ActorNoOp() extends GameActorCommand with RegionActor.Command with ResourceProducerCommand with BankActor.Command
+case class ActorNoOp() extends GameActorCommand
 
 case class MakeWorkerBid(sendTo: ActorRef[RegionActor.Command], wage: Int)
-  extends ResourceProducerCommand
+  extends ResourceProducer.Command
 
-case class AcceptWorkerBid() extends ResourceProducerCommand
+case class AcceptWorkerBid() extends ResourceProducer.Command
 
-case class RejectWorkerBid() extends ResourceProducerCommand
+case class RejectWorkerBid() extends ResourceProducer.Command
 
-case class PayWages() extends ResourceProducerCommand
+case class PayWages() extends ResourceProducer.Command
 
-case class AddWorker() extends ResourceProducerCommand
+case class AddWorker() extends ResourceProducer.Command
 
-case class ProduceResource() extends ResourceProducerCommand
+case class ProduceResource() extends ResourceProducer.Command
 
-case class AcceptBid() extends EconActorCommand
+case class AcceptBid() extends EconAgent.Command
 
-case class RejectBid() extends EconActorCommand
+case class RejectBid() extends EconAgent.Command
 
 case class IssueBond(principal: Int, interestRate: Double, issueTo: String)
-  extends EconActorCommand with ResourceProducerCommand with BankActor.Command with RegionActor.Command
+  extends BankingCommand
 
-case class ReceiveBond(bond: Bond, replyTo: ActorRef[Boolean], issuedFrom: ActorRef[ResourceProducerCommand])
-  extends GovernmentActor.GovtCommand with BankActor.Command
+case class ReceiveBond(bond: Bond, replyTo: ActorRef[Boolean], issuedFrom: EconActor)
+  extends BankingCommand
 
-case class AddOutstandingBond(bond: Bond, issuedTo: String) extends ResourceProducerCommand
+case class AddOutstandingBond(bond: Bond, issuedTo: String) extends EconAgent.Command
 
-case class PayBond(bond: Bond, amount: Int, replyTo: ActorRef[Int]) extends ResourceProducerCommand
+case class PayBond(bond: Bond, amount: Int, replyTo: ActorRef[Int]) extends EconAgent.Command
 
-case class MakeBid(sendTo: ActorRef[EconActorCommand], resourceType: ResourceType, quantity: Int, price: Int)
-  extends EconActorCommand with ResourceProducerCommand with RegionActor.Command with GovernmentActor.GovtCommand
+case class MakeBid(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
+  extends EconAgent.Command
 
-case class ReceiveBid(replyTo: ActorRef[EconActorCommand], resourceType: ResourceType, quantity: Int, price: Int)
-  extends EconActorCommand with ResourceProducerCommand with GovernmentActor.GovtCommand
+case class ReceiveBid(replyTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
+  extends EconAgent.Command
 
 case class ShowInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]])
-  extends GameActorCommand with RegionActor.Command with ResourceProducerCommand with GovernmentActor.GovtCommand with BankActor.Command
+  extends GameActorCommand
 
 case class GetBidPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType)
-  extends EconActorCommand with ResourceProducerCommand with GovernmentActor.GovtCommand
+  extends EconAgent.Command with ResourceProducer.Command with GovernmentActor.GovtCommand
 
 case class GetAskPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType)
-  extends EconActorCommand with ResourceProducerCommand with GovernmentActor.GovtCommand
+  extends EconAgent.Command with ResourceProducer.Command with GovernmentActor.GovtCommand

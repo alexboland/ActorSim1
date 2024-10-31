@@ -50,10 +50,12 @@ object FarmActor {
   case class InfoResponse(farm: Farm) extends GameInfo.InfoResponse {
     override val agent: Farm = farm
   }
+  
+  type Command = ResourceProducer.Command | GameActorCommand
 
-  def apply(state: FarmActorState): Behavior[ResourceProducerCommand] = Behaviors.setup { context =>
+  def apply(state: FarmActorState): Behavior[Command] = Behaviors.setup { context =>
     implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
-    def tick(state: FarmActorState): Behavior[ResourceProducerCommand] = {
+    def tick(state: FarmActorState): Behavior[Command] = {
       val farm = state.farm
       Behaviors.receive { (context, message) =>
         message match {

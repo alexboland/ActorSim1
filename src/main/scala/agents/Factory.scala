@@ -17,9 +17,9 @@ case class Factory(
                ) extends ResourceProducer
 
 object FactoryActor {
-  def apply(factory: Factory): Behavior[ResourceProducerCommand] = Behaviors.setup { context =>
+  def apply(factory: Factory): Behavior[ResourceProducer.Command] = Behaviors.setup { context =>
 
-    def tick(factory: Factory): Behavior[ResourceProducerCommand] = {
+    def tick(factory: Factory): Behavior[ResourceProducer.Command] = {
       Behaviors.receive { (context, message) =>
         message match {
           case ProduceResource() =>

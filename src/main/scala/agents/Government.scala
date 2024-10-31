@@ -35,7 +35,7 @@ object GovernmentActor {
 
   case class BuyResource(resourceType: ResourceType, qty: Int) extends GovtCommand // No need for price since govt has unlimited money
   
-  type Command = GovtCommand | BankingCommand
+  type Command = GovtCommand | BankingCommand | GameActorCommand
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
 

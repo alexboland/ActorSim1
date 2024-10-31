@@ -20,7 +20,7 @@ case class Bond(
 
 case class BankActorState(
                            bank: Bank,
-                           econActors: Map[String, ActorRef[ResourceProducerCommand]],
+                           econActors: Map[String, EconActor],
                          )
 
 case class Bank(
@@ -43,7 +43,7 @@ object Bank {
 
 object BankActor {
 
-  type Command = BankingCommand
+  type Command = BankingCommand | GameActorCommand
 
 
 

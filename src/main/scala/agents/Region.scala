@@ -14,7 +14,7 @@ import scala.util.{Failure, Success}
 case class RegionActorState(
                            region: Region,
                            governmentActor: ActorRef[GovernmentActor.Command],
-                           econActors: Map[String, ActorRef[ResourceProducerCommand]]
+                           econActors: Map[String, EconActor]
                            )
 
 case class Region(
@@ -74,9 +74,9 @@ object Region {
 }
 
 object RegionActor {
-  trait Command extends EconActorCommand
+  trait RegionCommand
 
-  case class BuyFromSeller(resourceType: ResourceType, quantity: Int, price: Int) extends Command
+  case class BuyFromSeller(resourceType: ResourceType, quantity: Int, price: Int) extends RegionCommand
 
   case class InfoResponse(region: Region) extends GameInfo.InfoResponse {
     val agent = region
@@ -86,28 +86,30 @@ object RegionActor {
     val agent = region
   }
 
-  case class DiscoverResource(resourceType: ResourceType, quantity: Int) extends Command
+  case class DiscoverResource(resourceType: ResourceType, quantity: Int) extends RegionCommand
 
-  case class InitializeRegion(region: Region) extends Command
+  case class InitializeRegion(region: Region) extends RegionCommand
 
-  case class ConsumeFood() extends Command
+  case class ConsumeFood() extends RegionCommand
 
-  case class ChangePopulation() extends Command
+  case class ChangePopulation() extends RegionCommand
 
-  case class ReceiveWorkerBid(replyTo: ActorRef[Boolean], agentId: String, price: Int) extends Command
+  case class ReceiveWorkerBid(replyTo: ActorRef[Boolean], agentId: String, price: Int) extends RegionCommand
 
-  case class ProduceBaseResources() extends Command
+  case class ProduceBaseResources() extends RegionCommand
 
-  case class ChangeSeason() extends Command
+  case class ChangeSeason() extends RegionCommand
 
-  case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
-  case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
+  case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends RegionCommand
+  case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends RegionCommand
 
-  case class BuildFarm() extends Command
+  case class BuildFarm() extends RegionCommand
 
-  case class BuildBank() extends Command
+  case class BuildBank() extends RegionCommand
 
-  case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
+  case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends RegionCommand
+  
+  type Command = RegionCommand | EconAgent.Command | GameActorCommand
 
   def apply(state: RegionActorState): Behavior[Command] = Behaviors.setup { context =>
     implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
@@ -280,10 +282,10 @@ object RegionActor {
             case ChangeSeason() =>
               tick(state.copy(region = region.copy(season = region.season.next)))
 
-            /*case BuildBank() =>
+            case BuildBank() =>
               val bank = Bank.newBank()
               val actorRef = context.spawn(BankActor(BankActorState(bank, Map())), bank.id)
-              tick(state.copy(econActorIds = state.econActorIds + (actorRef -> bank.id)))*/
+              tick(state.copy(econActors = state.econActors + (bank.id -> actorRef)))
 
 
             case BuildFarm() =>
