@@ -14,7 +14,7 @@ import scala.util.{Failure, Success}
 case class RegionActorState(
                            region: Region,
                            governmentActor: ActorRef[GovernmentActor.Command],
-                           econActorIds: Map[ActorRef[ResourceProducerCommand], String]
+                           econActors: Map[String, ActorRef[ResourceProducerCommand]]
                            )
 
 case class Region(
@@ -94,7 +94,7 @@ object RegionActor {
 
   case class ChangePopulation() extends Command
 
-  case class ReceiveWorkerBid(replyTo: ActorRef[EconActorCommand], price: Int) extends Command
+  case class ReceiveWorkerBid(replyTo: ActorRef[Boolean], agentId: String, price: Int) extends Command
 
   case class ProduceBaseResources() extends Command
 
@@ -147,7 +147,7 @@ object RegionActor {
                   case Success(Some(price: Int)) =>
                     context.self ! SellResourceToGovt(Food, newStoredResources(Food) - Math.round(region.population * 1.5).toInt, price)
                     ActorNoOp()
-                  case Success(None) =>
+                  case Success(_) =>
                     ActorNoOp()
                   case Failure(exception) =>
                     println(s"EXCEPTION WITH GOVT: ${exception.toString}")
@@ -191,7 +191,7 @@ object RegionActor {
                     val qtyToBuy = Math.min(updatedResources.getOrElse(Money, 0)/price, Math.round(region.population * 1.5f) - updatedResources(Food))
                     context.self ! BuyResourceFromGovt(Food, qtyToBuy, price)
                     ActorNoOp()
-                  case Success(None) =>
+                  case Success(_) =>
                     ActorNoOp()
                   case Failure(exception) =>
                     println(s"EXCEPTION WITH GOVT: ${exception.toString}")
@@ -230,9 +230,9 @@ object RegionActor {
               implicit val scheduler = context.system.scheduler
               implicit val ec = context.executionContext
 
-              val futures = state.econActorIds.map({
-                case (actor, uuid) =>
-                  actor.ask(ShowInfo(_))
+              val futures = state.econActors.map({
+                case (_, actor) =>
+                  actor.ask(ShowInfo.apply)
               })
 
               val aggregateInfo = Future.sequence(futures)
@@ -266,13 +266,13 @@ object RegionActor {
               tick(state.copy(region = region.copy(storedResources = updatedResources)))
 
 
-            case ReceiveWorkerBid(replyTo, price) =>
+            case ReceiveWorkerBid(replyTo, agentId, price) =>
               if (region.population - calculateAssignedWorkers(region) > 0) {
-                replyTo ! AcceptWorkerBid() //TODO use price of food as floor for whether to accept
+                replyTo ! true //TODO use price of food as floor for whether to accept
                 tick(state.copy(
                   region = region.copy(
                     laborAssignments = region.laborAssignments + // TODO make this fetch more safe
-                      (state.econActorIds(replyTo) -> (region.laborAssignments.getOrElse(state.econActorIds(replyTo), 0) + 1)))))
+                      (agentId -> (region.laborAssignments.getOrElse(agentId, 0) + 1)))))
               } else {
                 Behaviors.same
               }
@@ -291,7 +291,7 @@ object RegionActor {
               val actorRef = context.spawn(FarmActor(FarmActorState(farm, Map())), farm.id)
               tick(state.copy(
                 region = region.copy(laborAssignments = region.laborAssignments + (farm.id -> 0)),
-                econActorIds = state.econActorIds + (actorRef -> farm.id)))
+                econActors = state.econActors + (farm.id -> actorRef)))
 
             case ActorNoOp() =>
               Behaviors.same

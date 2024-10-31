@@ -19,21 +19,23 @@ object Government {
 }
 
 object GovernmentActor {
-  trait Command
+  trait GovtCommand
 
-  case class InitializeGov(government: Government) extends Command
+  case class InitializeGov(government: Government) extends GovtCommand
 
-  case class SetBidPrice(resourceType: ResourceType, price: Int) extends Command
+  case class SetBidPrice(resourceType: ResourceType, price: Int) extends GovtCommand
 
-  case class SetAskPrice(resourceType: ResourceType, price: Int) extends Command
+  case class SetAskPrice(resourceType: ResourceType, price: Int) extends GovtCommand
 
   case class InfoResponse(government: Government) extends GameInfo.InfoResponse {
     val agent = government
   }
 
-  case class AddRegion(uuid: String, ref: ActorRef[RegionActor.Command]) extends Command
+  case class AddRegion(uuid: String, ref: ActorRef[RegionActor.Command]) extends GovtCommand
 
-  case class BuyResource(resourceType: ResourceType, qty: Int) extends Command // No need for price since govt has unlimited money
+  case class BuyResource(resourceType: ResourceType, qty: Int) extends GovtCommand // No need for price since govt has unlimited money
+  
+  type Command = GovtCommand | BankingCommand
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
 

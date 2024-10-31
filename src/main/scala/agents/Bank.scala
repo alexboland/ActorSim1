@@ -43,17 +43,12 @@ object Bank {
 
 object BankActor {
 
-  trait Command extends EconActorCommand
+  type Command = BankingCommand
 
-  case class SetInterestRate(rate: Double) extends Command
 
-  case class ReceiveDeposit(amount: Int) extends Command
-
-  case class CollectBondPayment(bond: Bond, amount: Int) extends Command
-  case class DepositBondPayment(bond: Bond, amount: Int) extends Command
 
   case class InfoResponse(bank: Bank) extends GameInfo.InfoResponse {
-    override val agent = bank
+    override val agent: Bank = bank
   }
 
   def apply(state: BankActorState): Behavior[Command] = Behaviors.setup { context =>

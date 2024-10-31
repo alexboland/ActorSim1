@@ -36,7 +36,7 @@ object ManagerActor {
         println("====CREATE GOVT COMMAND=====")
         government match {
           case Some(actorRef) =>
-            context.ask(actorRef, ShowInfo) {
+            context.ask(actorRef, ShowInfo.apply) {
               case Success(Some(GovernmentActor.InfoResponse(govt))) =>
                 println("success with govt ping!")
                 InternalGovtResponse(Some(govt), replyTo)//Just do it without an error message for now and make it idempotent
@@ -50,7 +50,7 @@ object ManagerActor {
             val actorRef = context.spawn(GovernmentActor(), "Government")
             government = Some(actorRef)
             actorRef ! GovernmentActor.InitializeGov(Government.newGov())
-            context.ask(actorRef, ShowInfo) {
+            context.ask(actorRef, ShowInfo.apply) {
               case Success(Some(GovernmentActor.InfoResponse(govt))) =>
                 println("success with govt ping!")
                 InternalGovtResponse(Some(govt), replyTo) //Just do it without an error message for now and make it idempotent
@@ -64,7 +64,7 @@ object ManagerActor {
       case GetGovtInfo(replyTo) =>
         government match {
           case Some(actorRef) =>
-            context.ask(actorRef, ShowInfo) {
+            context.ask(actorRef, ShowInfo.apply) {
               case Success(Some(GovernmentActor.InfoResponse(govt))) =>
                 println("success with govt ping!")
                 InternalGovtResponse(Some(govt), replyTo) //Just do it without an error message for now and make it idempotent
@@ -88,7 +88,7 @@ object ManagerActor {
         government match {
           case Some(govt) =>
             val region = Region.newRandomRegion()
-            val state = RegionActorState(region = region, governmentActor = govt, econActorIds = Map())
+            val state = RegionActorState(region = region, governmentActor = govt, econActors = Map())
             val actorRef = context.spawn(RegionActor(state), region.id)
             regions += (actorRef.path.name -> actorRef)
             govt ! GovernmentActor.AddRegion(region.id, actorRef)

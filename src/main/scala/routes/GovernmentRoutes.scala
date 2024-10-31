@@ -65,9 +65,6 @@ object GovernmentRoutes {
             case util.Failure(ex) =>
               println(s"error finding government: ${ex.getMessage}")
               complete(StatusCodes.InternalServerError -> s"An error occurred: ${ex.getMessage}")
-            case _ =>
-              println(s"Unexpected response type for government")
-              complete(StatusCodes.InternalServerError -> "Unexpected response type")
           }
         }
       }

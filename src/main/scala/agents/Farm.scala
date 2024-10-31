@@ -48,7 +48,7 @@ object Farm {
 object FarmActor {
 
   case class InfoResponse(farm: Farm) extends GameInfo.InfoResponse {
-    override val agent = farm
+    override val agent: Farm = farm
   }
 
   def apply(state: FarmActorState): Behavior[ResourceProducerCommand] = Behaviors.setup { context =>
@@ -88,12 +88,10 @@ object FarmActor {
             Behaviors.same
 
           case MakeWorkerBid(sendTo, wage) =>
-            context.ask(sendTo, RegionActor.ReceiveWorkerBid(_, wage)) {
-              case Success(AcceptWorkerBid()) =>
+            context.ask(sendTo, RegionActor.ReceiveWorkerBid(_, state.farm.id, wage)) {
+              case Success(true) =>
                 AddWorker()
-              case Success(RejectWorkerBid()) =>
-                ActorNoOp()
-              case Failure(_) =>
+              case _ =>
                 ActorNoOp()
 
             }
