@@ -20,7 +20,7 @@ object GovernmentRoutes {
             val createdGovtFuture = system.ask(ManagerActor.CreateGovernment(_))
             onSuccess(createdGovtFuture) { created =>
               created match {
-                case Some(govt) =>
+                case Some(govt: Government) =>
                   complete {
                     // Extract keys and convert to List[String]
                     val keysList: List[String] = govt.regions.keys.toList

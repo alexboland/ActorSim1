@@ -78,7 +78,7 @@ object BankActor {
               state.econActors.get(bond.debtorId) match {
                 case Some(actorRef) =>
                   context.ask(actorRef, PayBond(bond, amount, _)) {
-                    case Success(payment) =>
+                    case Success(payment: Int) =>
                       DepositBondPayment(bond, payment)
                     case Failure(err) =>
                       println(s"failure in command CollectBondPayment in bank ${state.bank.id}: ${err}")

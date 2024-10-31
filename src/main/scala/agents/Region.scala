@@ -144,7 +144,7 @@ object RegionActor {
               //This is just dummy logic to test it, I'll come up with a better formula soon
               if (newStoredResources(Food) > region.population * 1.5) {
                 context.ask(state.governmentActor, GetBidPrice(_, Food)) {
-                  case Success(Some(price)) =>
+                  case Success(Some(price: Int)) =>
                     context.self ! SellResourceToGovt(Food, newStoredResources(Food) - Math.round(region.population * 1.5).toInt, price)
                     ActorNoOp()
                   case Success(None) =>
@@ -187,7 +187,7 @@ object RegionActor {
 
               if (updatedResources(Food) < region.population * 1.5) {
                 context.ask(state.governmentActor, GetAskPrice(_, Food)) {
-                  case Success(Some(price)) =>
+                  case Success(Some(price: Int)) =>
                     val qtyToBuy = Math.min(updatedResources.getOrElse(Money, 0)/price, Math.round(region.population * 1.5f) - updatedResources(Food))
                     context.self ! BuyResourceFromGovt(Food, qtyToBuy, price)
                     ActorNoOp()
@@ -238,7 +238,7 @@ object RegionActor {
               val aggregateInfo = Future.sequence(futures)
 
               aggregateInfo.onComplete({
-                case Success(iter) =>
+                case Success(iter: Iterable[Option[GameInfo.InfoResponse]]) =>
                   val info = iter.flatMap(_.map(_.agent)).toList
                   replyTo ! Some(FullInfoResponse(region, info))
                 case _ =>

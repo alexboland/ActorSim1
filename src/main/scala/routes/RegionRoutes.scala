@@ -20,8 +20,8 @@ object RegionRoutes {
       path("create") {
         post {
           entity(as[String]) { jsonString =>
-            val createdActorFuture = system.ask(ManagerActor.CreateRandomRegion(_))
-            onSuccess(createdActorFuture) { created =>
+            val createdActorFuture: Future[ManagerActor.RegionCreated] = system.ask(ManagerActor.CreateRandomRegion(_))
+            onSuccess(createdActorFuture) { (created: ManagerActor.RegionCreated) =>
               /*val jsonResponse = JsObject(
                 "uuid" -> JsString(uuidString),
                 "population" -> JsNumber(region.population),
