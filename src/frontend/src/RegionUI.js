@@ -23,7 +23,7 @@ const RegionUI = ({ regionId, regionInfo, updateRegionInfo, onViewDetails }) => 
     if (!regionInfo.population) {
       pingRegion();
     }
-  }, [regionId, regionInfo.population]);
+  }, [regionId, regionInfo]);
 
   return (
     <div
@@ -33,12 +33,12 @@ const RegionUI = ({ regionId, regionInfo, updateRegionInfo, onViewDetails }) => 
       }}
     >
       <h3 style={styles.regionTitle}>Region: {regionId}</h3>
-      <p style={styles.regionInfo}>Population: {regionInfo.population || 'Loading...'}</p>
-      <p style={styles.regionInfo}>Season: {regionInfo.season || 'Loading...'}</p>
+      <p style={styles.regionInfo}>Population: {regionInfo && regionInfo.population || 'Loading...'}</p>
+      <p style={styles.regionInfo}>Season: {regionInfo && regionInfo.season || 'Loading...'}</p>
       <div style={styles.resourcesSection}>
         <h4 style={styles.resourcesTitle}>Base Production:</h4>
         <ul style={styles.resourcesList}>
-          {regionInfo.baseProduction ? (
+          {regionInfo && regionInfo.baseProduction ? (
             Object.entries(regionInfo.baseProduction).map(([resource, amount]) => (
               <li key={resource} style={styles.resourceItem}>
                 {resource}: {amount}
@@ -50,7 +50,7 @@ const RegionUI = ({ regionId, regionInfo, updateRegionInfo, onViewDetails }) => 
         </ul>
         <h4 style={styles.resourcesTitle}>Stored Resources:</h4>
         <ul style={styles.resourcesList}>
-          {regionInfo.storedResources ? (
+          {regionInfo && regionInfo.storedResources ? (
             Object.entries(regionInfo.storedResources).map(([resource, amount]) => (
               <li key={resource} style={styles.resourceItem}>
                 {resource}: {amount}

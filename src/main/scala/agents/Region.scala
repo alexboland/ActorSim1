@@ -19,6 +19,7 @@ case class RegionActorState(
 
 case class Region(
                id: String,
+               location: Region.Location,
                laborAssignments: Map[String, Int],
                storedResources: Map[ResourceType, Int],
                population: Int,
@@ -27,6 +28,9 @@ case class Region(
                ) extends GameAgent
 
 object Region {
+
+  case class Location(x: Int, y: Int)
+
   trait Season {
     def multiplier: Double
     def next: Season
@@ -48,7 +52,7 @@ object Region {
     override def next = Spring
   }
 
-  def newRandomRegion(): Region = {
+  def newRandomRegion(x: Int, y: Int): Region = {
 
     // TODO add code here for creating random resource base production amounts
 
@@ -57,7 +61,8 @@ object Region {
     val woodProduction = Math.round(6 * Math.random()) * 0.25
 
     Region(
-      id = UUID.randomUUID().toString,
+      id = UUID.randomUUID.toString(),
+      location = Location(x = x, y = y),
       laborAssignments = Map(),
       population = 100,
       storedResources = Map(

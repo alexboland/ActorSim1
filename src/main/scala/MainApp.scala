@@ -49,18 +49,23 @@ object MainApp {
       )
 
       def withCors(routes: Route): Route =
-        respondWithHeaders(corsHeaders) {
-          routes
-        } ~ options {
+        options {
           // For preflight requests, respond with allowed methods and headers
           complete(HttpResponse(StatusCodes.OK).withHeaders(corsHeaders))
+        } ~
+        respondWithHeaders(corsHeaders) {
+          routes
         }
 
     object GameRoutes:
       val routes: Route = CorsSupport.withCors {
         concat(
           GovernmentRoutes.routes,
-          RegionRoutes.routes
+          RegionRoutes.routes,
+          extractRequest { req =>
+            println(s"Request did not match any route: ${req.method.value} ${req.uri}")
+            complete(StatusCodes.NotFound -> "Route not found")
+          }
         )
       }
 

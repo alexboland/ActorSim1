@@ -6,26 +6,36 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout
 import middleware.GameInfo
 
-import scala.concurrent.duration.DurationInt
+import java.util.UUID
+import scala.concurrent.Future
+import scala.concurrent.duration.{Duration, DurationInt}
 import scala.util.{Failure, Success}
+import akka.actor.typed.scaladsl.AskPattern.Askable
 
 object ManagerActor {
   trait Command
   case class CreateGovernment(replyTo: ActorRef[Option[Government]]) extends Command
-  case class CreateRandomRegion(replyTo: ActorRef[RegionCreated]) extends Command
+  case class CreateRegions(locations: List[Region.Location], replyTo: ActorRef[RegionsCreated]) extends Command
+  case class CreateRandomRegion(x: Int, y: Int, replyTo: ActorRef[RegionCreated]) extends Command
   case class RegionCreated(actorRef: Either[String, ActorRef[RegionActor.Command]]) extends Command
+  case class RegionsCreated(resp: Either[String, List[ActorRef[RegionActor.Command]]]) extends Command
   case class GetGovtInfo(replyTo: ActorRef[Option[Government]]) extends Command
   case class GetRegionInfo(uuid: String, replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
+  case class GetRegionsInfo(replyTo: ActorRef[List[RegionActor.InfoResponse]]) extends Command
+  case class AggregateRegionsInfo(replyTo: ActorRef[List[RegionActor.InfoResponse]], requestId: UUID, response: Option[RegionActor.InfoResponse], expectedSize: Int) extends Command
   case class GetFullRegionInfo(uuid: String, replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
 
   case class GetRegionActor(uuid: String, replyTo: ActorRef[Option[ActorRef[RegionActor.Command]]]) extends Command
-  private case class InternalRegionResponse(regionOpt: Option[Region], replyTo: ActorRef[Option[Region]]) extends Command
+
+  private case class InternalRegionResponse(regionOpt: Option[Region]) extends Command
   private case class InternalGovtResponse(govtOpt: Option[Government], replyTo: ActorRef[Option[Government]]) extends Command
+
+
 
   private var government: Option[ActorRef[GovernmentActor.Command]] = None
   private var regions = Map.empty[String, ActorRef[RegionActor.Command]]
 
-
+  private var inProgressCollections = Map.empty[UUID, List[RegionActor.InfoResponse]]
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
     implicit val ec = context.executionContext
@@ -84,10 +94,27 @@ object ManagerActor {
         Behaviors.same
 
 
-      case CreateRandomRegion(replyTo) =>
+      case CreateRegions(locations, replyTo) =>
         government match {
           case Some(govt) =>
-            val region = Region.newRandomRegion()
+            val actorRefs = locations.foldLeft(List[ActorRef[RegionActor.Command]]()) { (acc, location) =>
+              val region = Region.newRandomRegion(location.x, location.y)
+              val state = RegionActorState(region = region, governmentActor = govt, econActors = Map())
+              val actorRef = context.spawn(RegionActor(state), region.id)
+              regions += (actorRef.path.name -> actorRef)
+              govt ! GovernmentActor.AddRegion(region.id, actorRef)
+              acc :+ actorRef
+              }
+            replyTo ! RegionsCreated(Right(actorRefs))
+          case None =>
+            replyTo ! RegionsCreated(Left("cannot create regions without government"))
+        }
+        Behaviors.same
+
+      case CreateRandomRegion(x, y, replyTo) =>
+        government match {
+          case Some(govt) =>
+            val region = Region.newRandomRegion(x, y)
             val state = RegionActorState(region = region, governmentActor = govt, econActors = Map())
             val actorRef = context.spawn(RegionActor(state), region.id)
             regions += (actorRef.path.name -> actorRef)
@@ -111,6 +138,33 @@ object ManagerActor {
         }
         Behaviors.same
 
+      case GetRegionsInfo(replyTo) =>
+        if (regions.isEmpty) {
+          replyTo ! List.empty[RegionActor.InfoResponse]
+        } else {
+
+          val requestId = UUID.randomUUID()
+
+          regions.foreach { (uuid, regionActor) =>
+            context.ask(regionActor, ShowInfo.apply) {
+              case Success(Some(response: RegionActor.InfoResponse)) => AggregateRegionsInfo(replyTo, requestId, Some(response), regions.keys.toList.length)
+              case _ => AggregateRegionsInfo(replyTo, requestId, None, regions.keys.toList.length) // TODO figure out error handling later
+            }
+          }
+        }
+
+        Behaviors.same
+
+      case AggregateRegionsInfo(replyTo, requestId, Some(response), expectedSize) =>
+        val updated = response :: inProgressCollections.getOrElse(requestId, List())
+        inProgressCollections += (requestId -> updated)
+        if (updated.length == expectedSize) {
+          //inProgressCollections -= requestId
+          replyTo ! updated
+        }
+        Behaviors.same
+
+
       case GetFullRegionInfo(uuid, replyTo) =>
         regions.get(uuid) match {
           case Some(regionActor) =>
@@ -126,11 +180,6 @@ object ManagerActor {
 
       case GetRegionActor(uuid, replyTo) =>
         replyTo ! regions.get(uuid)
-        Behaviors.same
-
-      case InternalRegionResponse(regionOpt, originalReplyTo) =>
-        // Forward the region info to the original requester
-        originalReplyTo ! regionOpt
         Behaviors.same
 
       case unhandledthing =>

@@ -51,8 +51,8 @@ object GovernmentRoutes {
             system.ask(ref => ManagerActor.GetGovtInfo(ref))
 
           onComplete(infoFuture) {
-            case util.Success(maybeRegion) =>
-              maybeRegion match {
+            case util.Success(maybeGovt) =>
+              maybeGovt match {
                 case Some(govt) =>
                   val jsonResponse = govt.asJson.noSpaces //JsObject("regions" -> jsArray)
 

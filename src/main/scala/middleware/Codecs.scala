@@ -37,14 +37,23 @@ object JsonCodecs {
     }
   }
 
+  implicit val regionLocationEncoder: Encoder[Region.Location] = new Encoder[Region.Location] {
+    override def apply(location: Region.Location): Json = Json.obj(
+      "x" -> Json.fromInt(location.x),
+      "y" -> Json.fromInt(location.y)
+    )
+  }
+
   // Manual encoder for Region
   implicit val regionEncoder: Encoder[Region] = new Encoder[Region] {
     final def apply(region: Region): Json = Json.obj(
+      "id" -> region.id.asJson,
       "laborAssignments" -> region.laborAssignments.asJson,
       "storedResources" -> region.storedResources.asJson,
       "population" -> region.population.asJson,
       "baseProduction" -> region.baseProduction.asJson,
-      "season" -> region.season.asJson
+      "season" -> region.season.asJson,
+      "location" -> region.location.asJson
     )
   }
 

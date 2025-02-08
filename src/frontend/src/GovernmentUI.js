@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
+import RegionsMap from './RegionsMap';
 import RegionUI from './RegionUI';
 import RegionDetailsUI from './RegionDetailsUI';
 
-const GovernmentUI = ({ initialGovernment }) => {
+const GovernmentUI = ({ initialGovernment, initialRegions }) => {
   const [government, setGovernment] = useState(null);
-  const [regions, setRegions] = useState({});
+  const [regions, setRegions] = useState([]);
   const [foodPrice, setFoodPrice] = useState(1);
   const [selectedRegion, setSelectedRegion] = useState(null);
 
+  // Effect to handle initial government setup
   useEffect(() => {
-    if (initialGovernment && initialGovernment.regions) {
+    if (initialGovernment) {
       setGovernment(initialGovernment);
-      const initialRegions = initialGovernment.regions.reduce((acc, uuid) => {
-        acc[uuid] = { uuid, population: null };
-        return acc;
-      }, {});
-      setRegions(initialRegions);
     }
   }, [initialGovernment]);
+
+  useEffect(() => {
+    if (initialRegions) {
+      setRegions(initialRegions);
+    }
+  }, [initialRegions]);
 
   const updateFoodPrice = async () => {
     try {
@@ -52,7 +55,7 @@ const GovernmentUI = ({ initialGovernment }) => {
 
       setGovernment(prevGovernment => ({
         ...prevGovernment,
-        regions: [...prevGovernment.regions, newRegion.uuid]
+        regions: [regions, newRegion.uuid]
       }));
 
       setRegions(prevRegions => ({
@@ -100,31 +103,13 @@ const GovernmentUI = ({ initialGovernment }) => {
           Create New Region
         </button>
       </div>
-      {government.regions.length > 0 ? (
-        <div style={styles.regionGrid}>
-          {government.regions.map((regionId) => (
-            <RegionUI
-              key={regionId}
-              regionId={regionId}
-              regionInfo={regions[regionId]}
-              updateRegionInfo={updateRegionInfo}
-              onViewDetails={handleViewDetails}
-            />
-          ))}
-        </div>
-      ) : (
-        <p>No regions available.</p>
-      )}
-      {selectedRegion && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalContent}>
-            <RegionDetailsUI
-              regionId={selectedRegion}
-              onClose={handleCloseDetails}
-            />
-          </div>
-        </div>
-      )}
+      <div>
+
+        <RegionsMap
+          regions={regions}
+          connections={[]}
+        />
+      </div>
     </div>
   );
 };
