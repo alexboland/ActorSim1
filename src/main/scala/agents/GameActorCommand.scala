@@ -9,13 +9,17 @@ trait GameAgent {
   val id: String
 }
 
-trait EconAgent extends GameAgent
+trait EconAgent extends GameAgent {
+  val regionId: String
+}
 
 object EconAgent {
   trait Command extends GameActorCommand
 }
 
-type EconActor = ActorRef[BankActor.Command] | ActorRef[GovernmentActor.Command] | ActorRef[RegionActor.Command] | ActorRef[FarmActor.Command] // Expand on this as necessary
+type EconActor = ActorRef[BankActor.Command] | ActorRef[GovernmentActor.Command]
+  | ActorRef[RegionActor.Command] | ActorRef[FarmActor.Command]
+  | ActorRef[MarketActor.Command] // Expand on this as necessary
 
 trait ResourceProducer extends EconAgent {
   val workers: Int
@@ -59,6 +63,10 @@ case class AcceptBid() extends EconAgent.Command
 
 case class RejectBid() extends EconAgent.Command
 
+case class AcceptAsk() extends EconAgent.Command
+
+case class RejectAsk() extends EconAgent.Command
+
 case class IssueBond(principal: Int, interestRate: Double, issueTo: String)
   extends BankingCommand
 
@@ -72,8 +80,14 @@ case class PayBond(bond: Bond, amount: Int, replyTo: ActorRef[Int]) extends Econ
 case class MakeBid(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
   extends EconAgent.Command
 
+case class BuyFromSeller(resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+
 case class ReceiveBid(replyTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
   extends EconAgent.Command
+
+case class MakeAsk(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+
+case class ReceiveAsk(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
 
 case class ShowInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]])
   extends GameActorCommand

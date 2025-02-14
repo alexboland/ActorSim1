@@ -16,6 +16,7 @@ case class FarmActorState(
 
 case class Farm(
   id: String,
+  regionId: String,
   workers: Int,
   storedFood: Int,
   wage: Int,
@@ -30,9 +31,10 @@ case class Farm(
 }
 
 object Farm {
-  def newFarm(baseProduction: Int): Farm = {
+  def newFarm(regionId: String, baseProduction: Int): Farm = {
     Farm(
       id = UUID.randomUUID().toString,
+      regionId = regionId,
       workers = 0,
       storedFood = 0,
       wage = 0,
@@ -59,6 +61,7 @@ object FarmActor {
       val farm = state.farm
       Behaviors.receive { (context, message) =>
         message match {
+
           case ReceiveBid(replyTo, resourceType, quantity, price) =>
             if (resourceType != Food) {
               replyTo ! RejectBid()

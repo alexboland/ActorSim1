@@ -2,6 +2,27 @@ import React, { useState, useMemo } from 'react';
 import { Delaunay } from 'd3-delaunay';
 import * as d3 from 'd3';
 
+const RegionTooltip = ({ region, latestData, position }) => {
+    if (!position) return null;
+    
+    return (
+      <div 
+        className="absolute bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-50"
+        style={{
+          left: position.x + 10,
+          top: position.y - 10,
+          minWidth: '200px'
+        }}
+      >
+        <h3 className="font-bold mb-2">Region {region.id.slice(0, 4)}</h3>
+        <div className="space-y-2 text-sm">
+          <p>Population: {region.population}</p>
+          <p>Resources: {JSON.stringify(region.storedResources) || 'N/A'}</p>
+        </div>
+      </div>
+    );
+  };
+
 const RegionVertex = ({ 
   region,
   onRegionClick,
@@ -9,14 +30,33 @@ const RegionVertex = ({
 }) => {
   const { id, location, population, storedResources } = region;
   const { zoom } = viewTransform;
+  const [tooltipPosition, setTooltipPosition] = useState(null);
   
   // Adjust text size and reduce the circle radius (so vertices are less prominent)
   const textSize = Math.max(12 / zoom, 8);
-  const circleRadius = Math.max(20 / zoom, 10); // Reduced vertex size
+  const circleRadius = Math.max(6 / zoom, 35); // Reduced vertex size
+
+    // Handle mouse events for tooltip
+    const handleMouseMove = (e) => {
+        console.log("mouseover");
+    // Get position relative to the SVG container
+    const svgRect = e.currentTarget.ownerSVGElement.getBoundingClientRect();
+    setTooltipPosition({
+        x: e.clientX - svgRect.left,
+        y: e.clientY - svgRect.top
+    });
+    };
+
+    const handleMouseLeave = () => {
+    setTooltipPosition(null);
+    };
 
   return (
+    <>
     <g 
       onClick={() => onRegionClick?.(region)}
+      onMouseOver={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
       className="cursor-pointer"
     >
       <circle
@@ -31,7 +71,7 @@ const RegionVertex = ({
       
       <text
         x={location.x}
-        y={location.y - 15 / zoom}
+        y={location.y - 30 / zoom}
         textAnchor="middle"
         style={{ fontSize: textSize }}
         className="font-semibold"
@@ -41,22 +81,40 @@ const RegionVertex = ({
       
       <text
         x={location.x}
-        y={location.y + 5 / zoom}
+        y={location.y - 15 / zoom}
         textAnchor="middle"
         style={{ fontSize: textSize * 0.8 }}
       >
         Pop: {population}
       </text>
       
-      <text
+      {/*<text
         x={location.x}
         y={location.y + 20 / zoom}
         textAnchor="middle"
         style={{ fontSize: textSize * 0.8 }}
       >
         X: {location.x} Y: {location.y}
-      </text>
+      </text>*/}
     </g>
+
+  {tooltipPosition && (
+    <foreignObject
+      x={location.x}
+      y={location.y}
+      width="100%"
+      height="100%"
+      style={{ overflow: 'scroll', fontSize: textSize, backgroundColor: "lightgray" }}
+    >
+      <RegionTooltip
+        region={region}
+        position={tooltipPosition}
+      />
+    </foreignObject>
+  )}
+  </>
+
+    
   );
 };
 
@@ -64,7 +122,7 @@ const RegionsMap = ({
   regions, 
   connections = [],
   className = "",
-  initialCamera = { x: 0, y: 0, zoom: 1 }
+  initialCamera = { x: 0, y: 0, zoom: 0.16 }
 }) => {
   // Camera state
   const [camera, setCamera] = useState(initialCamera);
@@ -174,13 +232,13 @@ const RegionsMap = ({
         </button>
         <button 
           className="px-2 py-1 bg-gray-200 rounded"
-          onClick={() => setCamera(prev => ({ ...prev, zoom: prev.zoom / 1.2 }))}
+          onClick={() => setCamera(prev => ({ ...prev, zoom: Math.max(0.16, prev.zoom / 1.2) }))}
         >
           -
         </button>
         <button 
           className="px-2 py-1 bg-gray-200 rounded"
-          onClick={() => setCamera({ x: 0, y: 0, zoom: 1 })}
+          onClick={() => setCamera({ x: 0, y: 0, zoom: 0.16 })}
         >
           Reset
         </button>

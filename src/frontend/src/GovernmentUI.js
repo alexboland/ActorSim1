@@ -40,33 +40,6 @@ const GovernmentUI = ({ initialGovernment, initialRegions }) => {
     }
   };
 
-  const createRegion = async () => {
-    try {
-      const response = await fetch('http://localhost:8080/regions/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const newRegion = await response.json();
-
-      setGovernment(prevGovernment => ({
-        ...prevGovernment,
-        regions: [regions, newRegion.uuid]
-      }));
-
-      setRegions(prevRegions => ({
-        ...prevRegions,
-        [newRegion.uuid]: { uuid: newRegion.uuid, population: null }
-      }));
-    } catch (error) {
-      console.error('Failed to create new region:', error);
-    }
-  };
-
   const updateRegionInfo = (uuid, info) => {
     setRegions(prevRegions => ({
       ...prevRegions,
@@ -98,9 +71,6 @@ const GovernmentUI = ({ initialGovernment, initialRegions }) => {
         />
         <button onClick={updateFoodPrice} style={styles.button}>
           Set Food Price
-        </button>
-        <button onClick={createRegion} style={styles.button}>
-          Create New Region
         </button>
       </div>
       <div>

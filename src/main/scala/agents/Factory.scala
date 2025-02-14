@@ -7,6 +7,7 @@ import scala.concurrent.duration.DurationInt
 
 case class Factory(
                  id: String,
+                 regionId: String,
                  workers: Int,
                  resourceProduced: ResourceType,
                  maxWorkers: Int,

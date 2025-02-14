@@ -14,7 +14,7 @@ import scala.util.{Failure, Success}
 case class RegionActorState(
                            region: Region,
                            governmentActor: ActorRef[GovernmentActor.Command],
-                           econActors: Map[String, EconActor]
+                           econActors: Map[String, EconActor],
                            )
 
 case class Region(
@@ -81,8 +81,6 @@ object Region {
 object RegionActor {
   trait RegionCommand
 
-  case class BuyFromSeller(resourceType: ResourceType, quantity: Int, price: Int) extends RegionCommand
-
   case class InfoResponse(region: Region) extends GameInfo.InfoResponse {
     val agent = region
   }
@@ -112,6 +110,8 @@ object RegionActor {
 
   case class BuildBank() extends RegionCommand
 
+  case class BuildMarket() extends RegionCommand
+
   case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends RegionCommand
   
   type Command = RegionCommand | EconAgent.Command | GameActorCommand
@@ -122,17 +122,37 @@ object RegionActor {
         Behaviors.receive { (context, message) =>
           val region = state.region
           message match {
-            /*case ReceiveBid(resourceType, quantity, price) =>
-              if (region.storedResources(resourceType) < quantity) {
-                tick(region) // Insufficient resources to sell, do nothing
-                // TODO create some kind of threshold to dictate how much capacity it wants to retain
-              } else {
-                val newStoredResources = region.storedResources + (resourceType -> (region.storedResources(resourceType) - quantity))
-                tick(region.copy(storedResources = newStoredResources))
+            // For the time being, bids from/to market will be mediated through region agent
+            case ReceiveBid(replyTo, resourceType, quantity, price) =>
+              state.econActors.get("market") match {
+                case Some(marketActor) =>
+                  if (replyTo != marketActor) {
+                    marketActor ! ReceiveBid(replyTo, resourceType, quantity, price)
+                  } else {
+                    // If the bid is coming from the market, search for appropriate resource producers to forward things to
+                    // Also should forward demand to "founders" that may start a business based on demand, still working that out too
+                    // TODO figure out best way to implement this, for now use asks
+                  }
+                  Behaviors.same
+                case None =>
+                  Behaviors.same // This should never happen anyway
               }
 
+            case ReceiveAsk(replyTo, resourceType, quantity, price) =>
+              state.econActors.get("market") match {
+                case Some(marketActor) =>
+                  if (replyTo != marketActor) {
+                    marketActor ! ReceiveAsk(replyTo, resourceType, quantity, price)
+                  } else {
+                    // If the ask is coming from the market, search for appropriate resource producers to forward things to
+                    // But there's no plan to use this functionality here, still...
+                  }
+                  Behaviors.same
+                case None =>
+                  Behaviors.same // This should never happen anyway
+              }
 
-            case DiscoverResource(resourceType, quantity) =>
+            /*case DiscoverResource(resourceType, quantity) =>
               val newNaturalResources = region.baseProduction.updated(resourceType, region.baseProduction(resourceType) + quantity)
               tick(region.copy(baseProduction = newNaturalResources))*/
 
@@ -288,13 +308,17 @@ object RegionActor {
               tick(state.copy(region = region.copy(season = region.season.next)))
 
             case BuildBank() =>
-              val bank = Bank.newBank()
+              val bank = Bank.newBank(region.id)
               val actorRef = context.spawn(BankActor(BankActorState(bank, Map())), bank.id)
               tick(state.copy(econActors = state.econActors + (bank.id -> actorRef)))
 
+            case BuildMarket() =>
+              val market = Market.newMarket(region.id)
+              val actorRef = context.spawn(MarketActor(MarketActorState(market)), market.id)
+              tick(state.copy(econActors = state.econActors + (market.localId -> actorRef)))
 
             case BuildFarm() =>
-              val farm = Farm.newFarm(2)
+              val farm = Farm.newFarm(region.id, 2)
               val actorRef = context.spawn(FarmActor(FarmActorState(farm, Map())), farm.id)
               tick(state.copy(
                 region = region.copy(laborAssignments = region.laborAssignments + (farm.id -> 0)),

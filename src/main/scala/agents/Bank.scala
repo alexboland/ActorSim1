@@ -25,15 +25,17 @@ case class BankActorState(
 
 case class Bank(
                id: String,
+               regionId: String,
                storedMoney: Int,
                interestRate: Double,
                bonds: Map[String, Bond]
                ) extends EconAgent
 
 object Bank {
-  def newBank(): Bank = {
+  def newBank(regionId: String): Bank = {
     Bank(
       id = UUID.randomUUID().toString,
+      regionId = regionId,
       storedMoney = 0,
       interestRate = 0.05,
       bonds = Map()
