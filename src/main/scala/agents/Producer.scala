@@ -98,19 +98,23 @@ object ProducerActor {
               } else {
                 if (price < askPrice) {
                   replyTo ! RejectBid(Some(CounterOffer(availableToSell, askPrice)))
+                  Behaviors.same
                 } else {
                   if (availableToSell < quantity) {
                     replyTo ! RejectBid(Some(CounterOffer(availableToSell, price)))
+                    Behaviors.same
                   } else {
+                    // TODO need to change this because there are now cases where they may accept a bid but still not be bought from
                     replyTo ! AcceptBid()
+                    val updatedResources = storedResources +
+                      (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) - quantity)) +
+                      (Money -> (storedResources(Money) + Math.multiplyExact(quantity, price)))
+                    tick(state.copy(
+                      producer = producer.copy(storedResources = updatedResources)))
                   }
                 }
 
-                val updatedResources = storedResources +
-                  (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) - quantity)) +
-                  (Money -> (storedResources(Money) + Math.multiplyExact(quantity, price)))
-                tick(state.copy(
-                  producer = producer.copy(storedResources = updatedResources)))
+
               }
             }
 
