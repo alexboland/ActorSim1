@@ -15,11 +15,14 @@ trait EconAgent extends GameAgent {
 
 object EconAgent {
   trait Command extends GameActorCommand
+
+  case class CounterOffer(qty: Int, price: Int)
 }
 
 type EconActor = ActorRef[BankActor.Command] | ActorRef[GovernmentActor.Command]
   | ActorRef[RegionActor.Command] | ActorRef[FarmActor.Command]
-  | ActorRef[MarketActor.Command] // Expand on this as necessary
+  | ActorRef[MarketActor.Command] | ActorRef[ProducerActor.Command]
+  | ActorRef[FounderActor.Command] // Expand on this as necessary
 
 trait ResourceProducer extends EconAgent {
   val workers: Int
@@ -61,7 +64,7 @@ case class ProduceResource() extends ResourceProducer.Command
 
 case class AcceptBid() extends EconAgent.Command
 
-case class RejectBid() extends EconAgent.Command
+case class RejectBid(coOpt: Option[EconAgent.CounterOffer]) extends EconAgent.Command
 
 case class AcceptAsk() extends EconAgent.Command
 

@@ -53,8 +53,9 @@ object BankActor {
     override val agent: Bank = bank
   }
 
+  implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
+
   def apply(state: BankActorState): Behavior[Command] = Behaviors.setup { context =>
-    implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
     Behaviors.withTimers { timers =>
       def tick(state: BankActorState): Behavior[Command] = {
         Behaviors.receive { (context, message) =>

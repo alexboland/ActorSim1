@@ -37,9 +37,10 @@ object ManagerActor {
 
   private var inProgressCollections = Map.empty[UUID, List[RegionActor.InfoResponse]]
 
+  implicit val timeout: Timeout = 3.seconds
+
   def apply(): Behavior[Command] = Behaviors.setup { context =>
     implicit val ec = context.executionContext
-    implicit val timeout: Timeout = 3.seconds
     implicit val scheduler = context.system.scheduler
     Behaviors.receiveMessage {
       case CreateGovernment(replyTo) =>

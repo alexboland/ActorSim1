@@ -14,12 +14,13 @@ import scala.util.{Failure, Success}
 case class RegionActorState(
                            region: Region,
                            governmentActor: ActorRef[GovernmentActor.Command],
-                           econActors: Map[String, EconActor],
+                           econActors: Map[String, List[EconActor]],
                            )
 
 case class Region(
                id: String,
                location: Region.Location,
+               // TODO consider getting rid of laborAssignments: the information can easily be implied by just having a spareWorkers number instead
                laborAssignments: Map[String, Int],
                storedResources: Map[ResourceType, Int],
                population: Int,
@@ -112,26 +113,40 @@ object RegionActor {
 
   case class BuildMarket() extends RegionCommand
 
+  case class BuildProducer(producer: Producer) extends RegionCommand
+
   case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends RegionCommand
+
+  case class SpawnFounder() extends RegionCommand
   
   type Command = RegionCommand | EconAgent.Command | GameActorCommand
 
+  implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
+
   def apply(state: RegionActorState): Behavior[Command] = Behaviors.setup { context =>
-    implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
     def tick(state: RegionActorState): Behavior[Command] = {
         Behaviors.receive { (context, message) =>
           val region = state.region
+          val econActors = state.econActors
           message match {
             // For the time being, bids from/to market will be mediated through region agent
             case ReceiveBid(replyTo, resourceType, quantity, price) =>
-              state.econActors.get("market") match {
+              econActors.getOrElse("market", List()).headOption match {
                 case Some(marketActor) =>
                   if (replyTo != marketActor) {
                     marketActor ! ReceiveBid(replyTo, resourceType, quantity, price)
                   } else {
-                    // If the bid is coming from the market, search for appropriate resource producers to forward things to
-                    // Also should forward demand to "founders" that may start a business based on demand, still working that out too
-                    // TODO figure out best way to implement this, for now use asks
+                    // If the bid is coming from the market, search for appropriate producers to forward things to
+
+                    // Instead of trying to get all at once, just look for cheapest price and if the quantity
+                    // is inadequate then just have it come back as a counteroffer and let the market
+                    // make subsequent bids to deal with the rest
+                    // TODO figure out best way to narrow down who to send bids to, for now use asks
+                    // For now, at least have founder objects receive these bids
+                    econActors.getOrElse("founders", List()).foreach { actorRef =>
+                      actorRef ! ReceiveBid(replyTo, resourceType, quantity, price)
+                    }
+
                   }
                   Behaviors.same
                 case None =>
@@ -139,7 +154,7 @@ object RegionActor {
               }
 
             case ReceiveAsk(replyTo, resourceType, quantity, price) =>
-              state.econActors.get("market") match {
+              econActors.getOrElse("market", List()).headOption match {
                 case Some(marketActor) =>
                   if (replyTo != marketActor) {
                     marketActor ! ReceiveAsk(replyTo, resourceType, quantity, price)
@@ -254,11 +269,12 @@ object RegionActor {
               Behaviors.same
 
             case ShowFullInfo(replyTo) =>
+              // TODO create a more structured version of this
               implicit val scheduler = context.system.scheduler
               implicit val ec = context.executionContext
 
-              val futures = state.econActors.map({
-                case (_, actor) =>
+              val futures = econActors.values.flatten.toList.map({
+                case (actor) =>
                   actor.ask(ShowInfo.apply)
               })
 
@@ -278,10 +294,11 @@ object RegionActor {
               context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
                 case Success(AcceptBid()) =>
                   BuyFromSeller(resourceType, quantity, price)
-                case Success(RejectBid()) =>
+                case Success(RejectBid(None)) =>
                   ActorNoOp()
                 case Failure(_) =>
                   ActorNoOp()
+                  // TODO add case of RejectBid(Some(...
                 case _ =>
                   ActorNoOp()
 
@@ -310,19 +327,29 @@ object RegionActor {
             case BuildBank() =>
               val bank = Bank.newBank(region.id)
               val actorRef = context.spawn(BankActor(BankActorState(bank, Map())), bank.id)
-              tick(state.copy(econActors = state.econActors + (bank.id -> actorRef)))
+              val updatedFounders = actorRef :: econActors.getOrElse("founders", List())
+              tick(state.copy(econActors = econActors + ("founders" -> updatedFounders)))
 
             case BuildMarket() =>
               val market = Market.newMarket(region.id)
               val actorRef = context.spawn(MarketActor(MarketActorState(market)), market.id)
-              tick(state.copy(econActors = state.econActors + (market.localId -> actorRef)))
+              tick(state.copy(econActors = econActors + ("market" -> List(actorRef))))
 
-            case BuildFarm() =>
-              val farm = Farm.newFarm(region.id, 2)
-              val actorRef = context.spawn(FarmActor(FarmActorState(farm, Map())), farm.id)
+            case BuildProducer(producer) =>
+              val actorRef = context.spawn(ProducerActor(ProducerActorState(producer, Map(), context.self)), producer.id)
+              val updatedProducers = actorRef :: econActors.getOrElse("producers", List())
               tick(state.copy(
-                region = region.copy(laborAssignments = region.laborAssignments + (farm.id -> 0)),
-                econActors = state.econActors + (farm.id -> actorRef)))
+                // TODO get rid of laborAssignments (see above)
+                region = region.copy(laborAssignments = region.laborAssignments + (producer.id -> 0)),
+                econActors = econActors + ("producers" -> updatedProducers)))
+
+            case SpawnFounder() =>
+              val newId = UUID.randomUUID().toString
+              val newFounder = Founder(newId, region.id, None)
+              val actorRef = context.spawn(FounderActor(FounderActorState(newFounder, context.self)), newId)
+              val updatedFounders = actorRef :: econActors.getOrElse("founders", List())
+              val updatedActors = econActors + ("founders" -> updatedFounders)
+              tick(state.copy(econActors = updatedActors))
 
             case ActorNoOp() =>
               Behaviors.same

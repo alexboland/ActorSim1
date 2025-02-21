@@ -50,8 +50,9 @@ object MarketActor {
 
   type Command = Market.Command | GameActorCommand | EconAgent.Command
 
+  implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
+
   def apply(state: MarketActorState): Behavior[Command] = Behaviors.setup { context =>
-    implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
     def tick(state: MarketActorState): Behavior[Command] = {
       val market = state.market
       Behaviors.receive { (context, message) =>
@@ -69,7 +70,7 @@ object MarketActor {
             context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
               case Success(AcceptBid()) =>
                 BuyFromSeller(resourceType, quantity, price)
-              case Success(RejectBid()) =>
+              case Success(RejectBid(None)) =>
                 ActorNoOp()
               case Failure(_) =>
                 ActorNoOp()
@@ -89,7 +90,7 @@ object MarketActor {
           case ReceiveBid(replyTo, resourceType, quantity, price) =>
             // If it either doesn't have enough to sell or the price is too low, reject
             if (market.storedResources.getOrElse(resourceType, 0) < quantity || price < market.sellPrices.getOrElse(resourceType, 0)) {
-              replyTo ! RejectBid()
+              replyTo ! RejectBid(None)
               tick(state) // Not selling, do nothing
             } else {
               replyTo ! AcceptBid()

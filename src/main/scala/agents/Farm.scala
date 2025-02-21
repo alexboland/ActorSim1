@@ -64,11 +64,11 @@ object FarmActor {
 
           case ReceiveBid(replyTo, resourceType, quantity, price) =>
             if (resourceType != Food) {
-              replyTo ! RejectBid()
+              replyTo ! RejectBid(None)
               tick(state.copy(farm = farm))
             } else if (farm.storedFood < quantity) {
-              replyTo ! RejectBid()
-              tick(state.copy(farm = farm)) // Insufficient resources to sell, do nothing
+              replyTo ! RejectBid(None)
+              tick(state) // Insufficient resources to sell, do nothing
               // TODO create some kind of threshold to dictate how much capacity it wants to retain
             } else {
               // Currently dumb behavior where it doesn't negotiate
