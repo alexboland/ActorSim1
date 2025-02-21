@@ -68,8 +68,10 @@ object MarketActor {
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
             context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
+              case Success(list: List[EconAgent.Command]) =>
+                ActorNoOp()
               case Success(AcceptBid()) =>
-                BuyFromSeller(resourceType, quantity, price)
+                BuyFromSeller(sendTo, resourceType, quantity, price)
               case Success(RejectBid(None)) =>
                 ActorNoOp()
               case Failure(_) =>
@@ -80,7 +82,8 @@ object MarketActor {
             }
             Behaviors.same
 
-          case BuyFromSeller(resourceType, quantity, price) =>
+          case BuyFromSeller(seller, resourceType, quantity, price) =>
+            seller ! SellToBuyer(context.self, resourceType, quantity, price)
             val updatedResources = market.storedResources +
               (resourceType -> (market.storedResources.getOrElse(resourceType, 0) + quantity),
                 Money -> (market.storedResources.getOrElse(Money, 0) - Math.multiplyExact(quantity, price)))
@@ -120,6 +123,8 @@ object MarketActor {
         }
       }
     }
+    
+    
 
     Behaviors.withTimers { timers =>
       //timers.startTimerWithFixedDelay("production", ProduceResource(), 8.second)

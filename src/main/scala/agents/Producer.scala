@@ -98,21 +98,15 @@ object ProducerActor {
               } else {
                 if (price < askPrice) {
                   replyTo ! RejectBid(Some(CounterOffer(availableToSell, askPrice)))
-                  Behaviors.same
                 } else {
                   if (availableToSell < quantity) {
                     replyTo ! RejectBid(Some(CounterOffer(availableToSell, price)))
-                    Behaviors.same
                   } else {
                     // TODO need to change this because there are now cases where they may accept a bid but still not be bought from
                     replyTo ! AcceptBid()
-                    val updatedResources = storedResources +
-                      (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) - quantity)) +
-                      (Money -> (storedResources(Money) + Math.multiplyExact(quantity, price)))
-                    tick(state.copy(
-                      producer = producer.copy(storedResources = updatedResources)))
                   }
                 }
+                Behaviors.same
 
 
               }
@@ -164,7 +158,7 @@ object ProducerActor {
           case MakeBid(sendTo, resourceType, quantity, price) =>
             context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
               case Success(AcceptBid()) =>
-                BuyFromSeller(resourceType, quantity, price)
+                BuyFromSeller(sendTo, resourceType, quantity, price)
               case (Success(RejectBid(Some(CounterOffer(qty, newPrice))))) =>
                 // TODO add wages to total inputs once I switch wages to be per output rather than per time period
                 val newInputsCost = bidPrices.values.sum - price + newPrice
@@ -179,6 +173,21 @@ object ProducerActor {
                 ActorNoOp()
             }
             Behaviors.same
+
+          case BuyFromSeller(seller, resourceType, quantity, price) =>
+            seller ! SellToBuyer(context.self, resourceType, quantity, price)
+            val updatedResources = storedResources +
+              (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) + quantity)) +
+              (Money -> (storedResources(Money) - Math.multiplyExact(quantity, price)))
+            tick(state.copy(
+              producer = producer.copy(storedResources = updatedResources)))
+
+          case SellToBuyer(buyer, resourceType, quantity, price) =>
+            val updatedResources = storedResources +
+              (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) - quantity)) +
+              (Money -> (storedResources(Money) + Math.multiplyExact(quantity, price)))
+            tick(state.copy(
+              producer = producer.copy(storedResources = updatedResources)))
 
           case ShowInfo(replyTo) =>
             replyTo ! Some(InfoResponse(producer))

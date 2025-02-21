@@ -48,7 +48,6 @@ object JsonCodecs {
   implicit val regionEncoder: Encoder[Region] = new Encoder[Region] {
     final def apply(region: Region): Json = Json.obj(
       "id" -> region.id.asJson,
-      "laborAssignments" -> region.laborAssignments.asJson,
       "storedResources" -> region.storedResources.asJson,
       "population" -> region.population.asJson,
       "baseProduction" -> region.baseProduction.asJson,

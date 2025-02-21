@@ -83,7 +83,9 @@ case class PayBond(bond: Bond, amount: Int, replyTo: ActorRef[Int]) extends Econ
 case class MakeBid(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
   extends EconAgent.Command
 
-case class BuyFromSeller(resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+case class BuyFromSeller(seller: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+
+case class SellToBuyer(seller: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
 
 case class ReceiveBid(replyTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
   extends EconAgent.Command
