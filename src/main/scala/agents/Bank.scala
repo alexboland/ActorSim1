@@ -14,12 +14,12 @@ case class Bond(
                principal: Int,
                interestRate: Double,
                totalOutstanding: Int,
-               creditorId: String,
                debtorId: String
 )
 
 case class BankActorState(
                            bank: Bank,
+                           regionActor: ActorRef[RegionActor.Command],
                            econActors: Map[String, EconActor],
                          )
 
@@ -28,7 +28,8 @@ case class Bank(
                regionId: String,
                storedMoney: Int,
                interestRate: Double,
-               bonds: Map[String, Bond]
+               bondsOwned: Map[String, Bond],
+               bondsIssued: Map[String, Bond]
                ) extends EconAgent
 
 object Bank {
@@ -38,7 +39,8 @@ object Bank {
       regionId = regionId,
       storedMoney = 0,
       interestRate = 0.05,
-      bonds = Map()
+      bondsOwned = Map(),
+      bondsIssued = Map()
     )
   }
 }
@@ -46,8 +48,6 @@ object Bank {
 object BankActor {
 
   type Command = BankingCommand | GameActorCommand
-
-
 
   case class InfoResponse(bank: Bank) extends GameInfo.InfoResponse {
     override val agent: Bank = bank
@@ -58,6 +58,7 @@ object BankActor {
   def apply(state: BankActorState): Behavior[Command] = Behaviors.setup { context =>
     Behaviors.withTimers { timers =>
       def tick(state: BankActorState): Behavior[Command] = {
+        val bank = state.bank
         Behaviors.receive { (context, message) =>
           message match {
             case ShowInfo(replyTo) =>
@@ -65,12 +66,36 @@ object BankActor {
               Behaviors.same
 
             case ReceiveBond(bond, replyTo, issuedFrom) =>
-              //For now just accept all bonds
-              replyTo ! true //TODO consider making this not use the ask pattern so that replyTo can be the same as issuedFrom
+              // TODO factor in reserve requirements--for now, there are none
+              // as of right now, it will simply borrow any money needed to buy the bond from the government (central bank)
+              // will deal with more serious constraints later
+              if (bank.storedMoney < bond.principal) {
+                // borrow money to cover cost
+                // TODO additional money will come from deposits by region/producers, but for now this will suffice
+                state.regionActor ! IssueBond(state.regionActor, bond.principal, bank.interestRate * 0.9)
+              }
+              replyTo ! Some(bond.copy(interestRate = bank.interestRate)) // TODO consider risks of having ID mess up matching
               timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond, Math.round(bond.principal/10)), 20.second)
               tick(state.copy(
                 econActors = state.econActors + (bond.debtorId -> issuedFrom),
-                bank = state.bank.copy(bonds = state.bank.bonds + (bond.id -> bond))))
+                bank = bank.copy(
+                  bondsOwned = bank.bondsOwned + (bond.id -> bond),
+                  storedMoney = bank.storedMoney - bond.principal
+                )))
+
+            case IssueBond(sendTo, principal, interest) =>
+              val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, bank.id)
+              context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
+                case Success(Some(offered: Bond)) =>
+                  if (bond == offered) {
+                    AddOutstandingBond(bond)
+                  } else {
+                    IssueBond(sendTo, offered.principal, offered.interestRate) // Repeat but with their counteroffer
+                  }
+                case _ =>
+                  ActorNoOp()
+              }
+              Behaviors.same
 
             case CollectBondPayment(bond, amount) =>
               state.econActors.get(bond.debtorId) match {
@@ -94,11 +119,11 @@ object BankActor {
               val updatedBond = bond.copy(totalOutstanding = ((bond.totalOutstanding - amount)*bond.interestRate).toInt)
               val updatedBonds = if (bond.totalOutstanding <= 0) {
                 timers.cancel(s"collect-${bond.id}")
-                state.bank.bonds - bond.id
+                state.bank.bondsOwned - bond.id
               } else {
-                state.bank.bonds + (bond.id -> updatedBond)
+                state.bank.bondsOwned + (bond.id -> updatedBond)
               }
-              tick(state = state.copy(bank = state.bank.copy(storedMoney = newStoredMoney, bonds = updatedBonds)))
+              tick(state = state.copy(bank = state.bank.copy(storedMoney = newStoredMoney, bondsOwned = updatedBonds)))
             case _ =>
               Behaviors.same
           }

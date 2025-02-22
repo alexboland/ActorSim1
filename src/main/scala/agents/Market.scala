@@ -29,6 +29,7 @@ object Market {
 
   case class SetBuyPrice(resourceType: ResourceType, price: Int) extends Command
   case class SetSellPrice(resourceType: ResourceType, price: Int) extends Command
+  case class GetSellPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType) extends Command
 
   def newMarket(regionId: String): Market = {
     Market(
@@ -59,17 +60,19 @@ object MarketActor {
         message match {
 
           case SetBuyPrice(resourceType, price) =>
-            val newPrices = state.market.buyPrices + (resourceType -> price)
+            val newPrices = market.buyPrices + (resourceType -> price)
             tick(state.copy(market = market.copy(buyPrices = newPrices)))
 
           case SetSellPrice(resourceType, price) =>
-            val newPrices = state.market.sellPrices + (resourceType -> price)
+            val newPrices = market.sellPrices + (resourceType -> price)
             tick(state.copy(market = market.copy(sellPrices = newPrices)))
+
+          case GetSellPrice(replyTo, resourceType) =>
+            replyTo ! market.sellPrices.get(resourceType)
+            Behaviors.same
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
             context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
-              case Success(list: List[EconAgent.Command]) =>
-                ActorNoOp()
               case Success(AcceptBid()) =>
                 BuyFromSeller(sendTo, resourceType, quantity, price)
               case Success(RejectBid(None)) =>
@@ -123,8 +126,8 @@ object MarketActor {
         }
       }
     }
-    
-    
+
+
 
     Behaviors.withTimers { timers =>
       //timers.startTimerWithFixedDelay("production", ProduceResource(), 8.second)

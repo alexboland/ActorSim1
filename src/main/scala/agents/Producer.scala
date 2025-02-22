@@ -113,13 +113,11 @@ object ProducerActor {
             }
 
           case PayWages() =>
-            val totalPayment = Math.multiplyExact(producer.workers, producer.wage)
-            if (totalPayment > storedResources.getOrElse(Money, 0)) {
-              // Take out loan from bank or lose workers or something, still working on it
-            }
+            val workersToPay = Math.min(Math.floorDiv(storedResources.getOrElse(Money, 0), producer.wage), producer.workers)
             val updatedResources = storedResources +
-              (Money -> (storedResources(Money) - totalPayment))
-            tick(state.copy(producer = producer.copy(storedResources = updatedResources)))
+              (Money -> (storedResources.getOrElse(Money, 0) - (workersToPay * producer.wage)))
+            tick(state.copy(producer = producer.copy(
+              workers = workersToPay, storedResources = updatedResources)))
 
           case ProduceResource() =>
             // TODO have total production take into account multipliers
@@ -212,27 +210,21 @@ object ProducerActor {
           case AddWorker() =>
             tick(state = state.copy(producer = producer.copy(workers = producer.workers + 1)))
 
-          case IssueBond(principal, interest, issueTo) =>
-            state.econActors.get(issueTo) match {
-              case Some(actorRef) =>
-                val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, issueTo, producer.id)
-                context.ask(actorRef, ReceiveBond(bond, _, context.self)) {
-                  case Success(true) =>
-                    AddOutstandingBond(bond, issueTo)
-                  case Success(false) =>
-                    ActorNoOp()
-                  case Failure(err) =>
-                    println(s"failure in command IssueBond in farm ${producer.id}: ${err}")
-                    ActorNoOp()
-                  case _ =>
-                    ActorNoOp()
-                }
-              case _ =>
-                println(s"couldn't find actor ref for bank ${issueTo}")
-            }
+          case IssueBond(sendTo, principal, interest) =>
+            val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, producer.id)
+              context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
+                case Success(Some(offered: Bond)) =>
+                  if (bond == offered) {
+                    AddOutstandingBond(bond)
+                  } else {
+                    IssueBond(sendTo, offered.principal, offered.interestRate) // Repeat but with their counteroffer
+                  }
+                case _ =>
+                  ActorNoOp()
+              }
             Behaviors.same
 
-          case AddOutstandingBond(bond, issuedTo) =>
+          case AddOutstandingBond(bond) =>
             val updatedResources = storedResources + (Money -> (storedResources.getOrElse(Money, 0) + bond.principal))
 
             val newOutstandingBonds = producer.outstandingBonds + (bond.id -> bond)

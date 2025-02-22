@@ -1,6 +1,7 @@
 package agents
 
 import agents.EconAgent.CounterOffer
+import agents.Market.GetSellPrice
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
@@ -21,7 +22,6 @@ case class RegionActorState(
 case class Region(
                id: String,
                location: Region.Location,
-               // TODO consider getting rid of laborAssignments: the information can easily be implied by just having a spareWorkers number instead
                assignedWorkers: Int,
                storedResources: Map[ResourceType, Int],
                population: Int,
@@ -55,9 +55,9 @@ object Region {
   }
 
   def newRandomRegion(x: Int, y: Int): Region = {
-
-    // TODO add code here for creating random resource base production amounts
-
+    
+    // random base production amounts
+    // TODO factor this in to producer actors
     val foodProduction = (2 + Math.round(4 * Math.random())) * 0.25
     val copperProduction = Math.round(6 * Math.random()) * 0.25
     val woodProduction = Math.round(6 * Math.random()) * 0.25
@@ -99,7 +99,7 @@ object RegionActor {
 
   case class ChangePopulation() extends RegionCommand
 
-  case class ReceiveWorkerBid(replyTo: ActorRef[Boolean], agentId: String, price: Int) extends RegionCommand
+  case class ReceiveWorkerBid(replyTo: ActorRef[Either[Option[Int], Unit]], agentId: String, price: Int) extends RegionCommand
 
   case class ProduceBaseResources() extends RegionCommand
 
@@ -119,8 +119,12 @@ object RegionActor {
   case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends RegionCommand
 
   case class SpawnFounder() extends RegionCommand
-  
-  type Command = RegionCommand | EconAgent.Command | GameActorCommand
+
+  case class UnassignWorkers(qty: Int) extends RegionCommand
+
+  case class AssignWorkers(qty: Int) extends RegionCommand
+
+  type Command = RegionCommand | EconAgent.Command | GameActorCommand | BankingCommand
 
   implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
@@ -195,6 +199,20 @@ object RegionActor {
               case None =>
                 Behaviors.same // This should never happen anyway
             }
+
+          case ReceiveBond(bond, replyTo, issuedFrom) =>
+            // For now, if the bond is being issued by a (the) bank, forward to government (central bank)
+            // Otherwise, forward to the one bank in the region
+            // This will almost certainly change in future iterations
+            econActors.getOrElse("bank", List()).headOption match {
+              case Some(bankActor: ActorRef[BankActor.Command]) =>
+                if (replyTo == bankActor) {
+                  state.governmentActor ! ReceiveBond(bond, replyTo, issuedFrom)
+                } else {
+                  bankActor ! ReceiveBond(bond, replyTo, issuedFrom)
+                }
+            }
+            Behaviors.same
 
           /*case DiscoverResource(resourceType, quantity) =>
             val newNaturalResources = region.baseProduction.updated(resourceType, region.baseProduction(resourceType) + quantity)
@@ -340,11 +358,27 @@ object RegionActor {
 
           case ReceiveWorkerBid(replyTo, agentId, price) =>
             if (region.population - region.assignedWorkers > 0) {
-              replyTo ! true //TODO use price of food as floor for whether to accept
-              tick(state.copy(
-                region = region.copy(
-                  assignedWorkers = region.assignedWorkers + 1)))
+              econActors.getOrElse("market", List()).headOption match {
+                case Some(marketActor: ActorRef[MarketActor.Command]) =>
+                  context.ask(marketActor, GetSellPrice(_, Food)) {
+                    case Success(Some(foodPrice: Int)) =>
+                      if (price >= foodPrice) {
+                        replyTo ! Right(())
+                        AssignWorkers(1)
+                      } else {
+                        replyTo ! Left(Some(foodPrice))
+                        ActorNoOp()
+                      }
+                    case _ =>
+                      ActorNoOp()
+                  }
+                  Behaviors.same
+                case _ =>
+                  replyTo ! Left(None)
+                  Behaviors.same
+              }
             } else {
+              replyTo ! Left(None)
               Behaviors.same
             }
 
@@ -352,15 +386,27 @@ object RegionActor {
             tick(state.copy(region = region.copy(season = region.season.next)))
 
           case BuildBank() =>
-            val bank = Bank.newBank(region.id)
-            val actorRef = context.spawn(BankActor(BankActorState(bank, Map())), bank.id)
-            val updatedFounders = actorRef :: econActors.getOrElse("founders", List())
-            tick(state.copy(econActors = econActors + ("founders" -> updatedFounders)))
+            econActors.getOrElse("bank", List()).headOption match {
+              case None =>
+                val bank = Bank.newBank(region.id)
+                val actorRef = context.spawn(BankActor(BankActorState(bank, context.self, Map())), bank.id)
+                val newBankVal = actorRef :: List()
+                tick(state.copy(econActors = econActors + ("bank" -> newBankVal)))
+              case _ =>
+                Behaviors.same
+            }
+
 
           case BuildMarket() =>
-            val market = Market.newMarket(region.id)
-            val actorRef = context.spawn(MarketActor(MarketActorState(market)), market.id)
-            tick(state.copy(econActors = econActors + ("market" -> List(actorRef))))
+            econActors.getOrElse("market", List()).headOption match {
+              case None =>
+                val market = Market.newMarket(region.id)
+                val actorRef = context.spawn(MarketActor(MarketActorState(market)), market.id)
+                val newMarketVal = actorRef :: List()
+                tick(state.copy(econActors = econActors + ("market" -> newMarketVal)))
+              case _ =>
+                Behaviors.same
+            }
 
           case BuildProducer(producer) =>
             val actorRef = context.spawn(ProducerActor(ProducerActorState(producer, Map(), context.self)), producer.id)
@@ -374,6 +420,12 @@ object RegionActor {
             val updatedFounders = actorRef :: econActors.getOrElse("founders", List())
             val updatedActors = econActors + ("founders" -> updatedFounders)
             tick(state.copy(econActors = updatedActors))
+
+          case UnassignWorkers(qty) =>
+            tick(state.copy(region = region.copy(assignedWorkers = region.assignedWorkers - qty)))
+
+          case AssignWorkers(qty) =>
+            tick(state.copy(region = region.copy(assignedWorkers = region.assignedWorkers + qty)))
 
           case ActorNoOp() =>
             Behaviors.same

@@ -68,7 +68,6 @@ object JsonCodecs {
 
   implicit val gameAgentEncoder: Encoder[GameAgent] = Encoder.instance {
     case region: Region => region.asJson
-    case farm: Farm => farm.asJson
     case _ => Json.obj()
   }
 
@@ -85,13 +84,6 @@ object JsonCodecs {
     def combineEncoders[A <: ResourceProducer](specific: A => Json): Encoder[A] =
       (a: A) => ResourceProducerEncoderHelper.encodeCommon(a).deepMerge(specific(a))
   }
-
-  implicit val farmEncoder: Encoder[Farm] = ResourceProducerEncoderHelper.combineEncoders({ farm =>
-    Json.obj(
-      "storedFood" -> Json.fromInt(farm.storedFood),
-      "type" -> Json.fromString("Farm")
-    )
-  })
 
   // Manual decoder for Region
   /*implicit val regionDecoder: Decoder[Region] = new Decoder[Region] {

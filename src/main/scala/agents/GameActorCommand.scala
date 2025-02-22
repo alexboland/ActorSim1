@@ -20,9 +20,8 @@ object EconAgent {
 }
 
 type EconActor = ActorRef[BankActor.Command] | ActorRef[GovernmentActor.Command]
-  | ActorRef[RegionActor.Command] | ActorRef[FarmActor.Command]
-  | ActorRef[MarketActor.Command] | ActorRef[ProducerActor.Command]
-  | ActorRef[FounderActor.Command] // Expand on this as necessary
+  | ActorRef[RegionActor.Command] | ActorRef[MarketActor.Command] | ActorRef[ProducerActor.Command]
+  | ActorRef[FounderActor.Command] | ActorRef[BankActor.Command] // Expand on this as necessary
 
 trait ResourceProducer extends EconAgent {
   val workers: Int
@@ -70,13 +69,13 @@ case class AcceptAsk() extends EconAgent.Command
 
 case class RejectAsk() extends EconAgent.Command
 
-case class IssueBond(principal: Int, interestRate: Double, issueTo: String)
-  extends BankingCommand
+case class IssueBond(sendTo: ActorRef[BankingCommand], principal: Int, interestRate: Double)
+  extends EconAgent.Command
 
-case class ReceiveBond(bond: Bond, replyTo: ActorRef[Boolean], issuedFrom: EconActor)
-  extends BankingCommand
+case class ReceiveBond(bond: Bond, replyTo: ActorRef[Option[Bond]], issuedFrom: EconActor)
+  extends BankingCommand // for now, using the Bond the "counteroffer", with an identical bond being acceptance and None being no dice
 
-case class AddOutstandingBond(bond: Bond, issuedTo: String) extends EconAgent.Command
+case class AddOutstandingBond(bond: Bond) extends EconAgent.Command
 
 case class PayBond(bond: Bond, amount: Int, replyTo: ActorRef[Int]) extends EconAgent.Command
 
