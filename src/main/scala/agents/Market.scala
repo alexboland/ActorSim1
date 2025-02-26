@@ -1,6 +1,7 @@
 package agents
 
-import agents.Market._
+import agents.EconAgent.CounterOffer
+import agents.Market.*
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
@@ -93,6 +94,15 @@ object MarketActor {
 
             tick(state.copy(market = market.copy(storedResources = updatedResources)))
 
+          case SellToBuyer(buyer, resourceType, quantity, price) =>
+            //Note that currently this is supposed to never be the "initiating" transaction so assume other actor already ran the "buy" command
+            val updatedResources = market.storedResources +
+              (resourceType -> (market.storedResources.getOrElse(resourceType, 0) - quantity),
+                Money -> (market.storedResources.getOrElse(Money, 0) + Math.multiplyExact(quantity, price)))
+
+            tick(state.copy(market = market.copy(storedResources = updatedResources)))
+
+
           case ReceiveBid(replyTo, resourceType, quantity, price) =>
             // If it either doesn't have enough to sell or the price is too low, reject
             if (market.storedResources.getOrElse(resourceType, 0) < quantity || price < market.sellPrices.getOrElse(resourceType, 0)) {
@@ -108,8 +118,10 @@ object MarketActor {
             }
 
           case ReceiveAsk(replyTo, resourceType, quantity, price) =>
-            if (market.buyPrices.getOrElse(resourceType, 0) < price || market.storedResources.getOrElse(Money, 0) < price*quantity) {
-              replyTo ! RejectAsk()
+            val marketPrice = market.buyPrices.getOrElse(resourceType, 0)
+            val funds = market.storedResources.getOrElse(Money, 0)
+            if (marketPrice < price || funds < price*quantity) {
+              replyTo ! RejectAsk(Some(CounterOffer(Math.min(funds, quantity*price), Math.min(marketPrice, price))))
               tick(state)
             } else {
               replyTo ! AcceptAsk()

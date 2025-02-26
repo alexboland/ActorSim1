@@ -2,10 +2,12 @@ package agents
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
+import akka.util.Timeout
 import middleware.GameInfo
-import scala.concurrent.duration.DurationInt
 
+import scala.concurrent.duration.DurationInt
 import java.util.UUID
+import scala.util.{Failure, Success}
 
 case class Government(
                        id: String,
@@ -37,14 +39,18 @@ object GovernmentActor {
 
   case class AddRegion(uuid: String, ref: ActorRef[RegionActor.Command]) extends GovtCommand
 
-  case class BuyResource(resourceType: ResourceType, qty: Int) extends GovtCommand // No need for price since govt has unlimited money
-  
-  type Command = GovtCommand | BankingCommand | GameActorCommand
+
+  case class BuyAndSellResources() extends GovtCommand
+
+  type Command = GovtCommand | BankingCommand | GameActorCommand | EconAgent.Command
+
+  implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
 
-    def tick(government: Government): Behavior[Command] = {
-      Behaviors.withTimers { timers =>
+    Behaviors.withTimers { timers =>
+      def tick(government: Government): Behavior[Command] = {
+
         Behaviors.receive { (context, message) =>
           message match {
             case ShowInfo(replyTo) =>
@@ -53,9 +59,16 @@ object GovernmentActor {
               println("government actor replied to ShowInfo command")
               Behaviors.same
 
-            case BuyResource(resourceType, qty) =>
+            case BuyFromSeller(seller, resourceType, qty, price) =>
               val newStoredResources = government.storedResources + (resourceType -> (government.storedResources.getOrElse(resourceType, 0) + qty))
+              seller ! SellToBuyer(context.self, resourceType, qty, price)
+
               tick(government.copy(storedResources = newStoredResources))
+
+            case SellToBuyer(buyer, resourceType, qty, price)  =>
+              val newStoredResources = government.storedResources + (resourceType -> (government.storedResources.getOrElse (resourceType, 0) - qty) )
+
+              tick (government.copy (storedResources = newStoredResources) )
 
             case GetBidPrice(replyTo, resourceType) =>
               replyTo ! government.bidPrices.get(resourceType)
@@ -65,26 +78,38 @@ object GovernmentActor {
               replyTo ! government.askPrices.get(resourceType)
               Behaviors.same
 
-            case MakeBid(actor, resourceType, quantity, price) =>
-              /*val futureResponse: Future[RegionActor.BidResponse] = actor.ask(replyTo => RegionActor.ReceiveBid(resourceType, quantity, price, replyTo))
+            case BuyAndSellResources() =>
+              government.regions.foreach { (regionUuid, regionActor) =>
+                government.bidPrices.foreach { (rt, price) =>
+                  context.self ! MakeBid(regionActor, rt, 10, price) // TODO figure out quantity, for now it'll just calibrate on its own hopefully
+                }
+                government.askPrices.foreach { (rt, price) =>
+                  context.self ! MakeAsk(regionActor, rt, 10, price)
+                }
+              }
+              Behaviors.same
 
-              // Handling the future response
-              futureResponse.onComplete {
-                case Success(response) =>
-                  println(s"Received response: ${response.result}")
-                case Failure(exception) =>
-                  println(s"Failed to receive response: ${exception.getMessage}")
-              }*/
-              tick(government)
+            case MakeBid(sendTo, resourceType, quantity, price) =>
+              context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
+                case Success(AcceptBid()) =>
+                  BuyFromSeller(sendTo, resourceType, quantity, price)
+                case Success(RejectBid(None)) =>
+                  ActorNoOp()
+                case Failure(_) =>
+                  ActorNoOp()
+                case _ =>
+                  ActorNoOp()
+              }
+              Behaviors.same
 
             case ReceiveBond(bond, replyTo, issuedFrom) =>
               replyTo ! Some(bond.copy(interestRate = government.interestRate)) // TODO consider risks of having ID mess up matching
-              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond, Math.round(bond.principal/10)), 20.second)
+              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond, Math.round(bond.principal / 10)), 20.second)
               tick(government.copy(
                 econActors = government.econActors + (bond.debtorId -> issuedFrom),
                 bonds = government.bonds + (bond.id -> bond)
               ))
-              
+
             case AddRegion(uuid, ref) =>
               tick(government.copy(regions = government.regions + (uuid -> ref)))
 
@@ -93,19 +118,20 @@ object GovernmentActor {
           }
         }
       }
-    }
 
-    def initialize(): Behavior[Command] = {
-      Behaviors.receive { (context, message) =>
-        message match {
-          case InitializeGov(government) =>
-            tick(government)
-          case _ =>
-            Behaviors.same
+      def initialize(): Behavior[Command] = {
+        Behaviors.receive { (context, message) =>
+          message match {
+            case InitializeGov(government) =>
+              timers.startTimerWithFixedDelay("trading-timer", BuyAndSellResources(), 5.seconds)
+              tick(government)
+            case _ =>
+              Behaviors.same
+          }
         }
       }
-    }
 
-    initialize()
+      initialize()
+    }
   }
 }

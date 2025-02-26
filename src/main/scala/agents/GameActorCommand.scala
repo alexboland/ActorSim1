@@ -61,13 +61,17 @@ case class AddWorker() extends ResourceProducer.Command
 
 case class ProduceResource() extends ResourceProducer.Command
 
+// TODO refactor bidding messages in following possible ways:
+// (1) create Bid/Ask case class with quantity and price fields
+// (2) change replyTo to accept an Either instead of an EconAgent.Command
+// partially hesitating on (2) just in case I decide to stop using the ask pattern for bidding
 case class AcceptBid() extends EconAgent.Command
 
 case class RejectBid(coOpt: Option[EconAgent.CounterOffer]) extends EconAgent.Command
 
 case class AcceptAsk() extends EconAgent.Command
 
-case class RejectAsk() extends EconAgent.Command
+case class RejectAsk(coOpt: Option[EconAgent.CounterOffer]) extends EconAgent.Command
 
 case class IssueBond(sendTo: ActorRef[BankingCommand], principal: Int, interestRate: Double)
   extends EconAgent.Command

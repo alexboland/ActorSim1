@@ -55,7 +55,7 @@ object Region {
   }
 
   def newRandomRegion(x: Int, y: Int): Region = {
-    
+
     // random base production amounts
     // TODO factor this in to producer actors
     val foodProduction = (2 + Math.round(4 * Math.random())) * 0.25
@@ -107,6 +107,8 @@ object RegionActor {
 
   case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends RegionCommand
   case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends RegionCommand
+
+  case class SellSpareResources() extends RegionCommand
 
   case class BuildFarm() extends RegionCommand
 
@@ -231,11 +233,13 @@ object RegionActor {
             }
 
             //This is just dummy logic to test it, I'll come up with a better formula soon
+            // TODO move this logic to a new Command called sellSpareResources for better delegation/legibility
             if (newStoredResources(Food) > region.population * 1.5) {
               context.ask(state.governmentActor, GetBidPrice(_, Food)) {
                 case Success(Some(price: Int)) =>
-                  context.self ! SellResourceToGovt(Food, newStoredResources(Food) - Math.round(region.population * 1.5).toInt, price)
-                  ActorNoOp()
+                  econActors.getOrElse("market", List()).headOption.map { marketActor =>
+                    MakeAsk(marketActor, Food, newStoredResources(Food) - Math.round(region.population * 1.5).toInt, price)
+                  }.getOrElse(ActorNoOp())
                 case Success(_) =>
                   ActorNoOp()
                 case Failure(exception) =>
@@ -244,23 +248,16 @@ object RegionActor {
               }
             }
 
-            tick(state.copy(region = region.copy(storedResources = newStoredResources)))
-
-          case SellResourceToGovt(resourceType, qty, price) =>
-            state.governmentActor ! GovernmentActor.BuyResource(resourceType, qty)
-
-            val newStoredResources = region.storedResources +
-              (resourceType -> (region.storedResources.getOrElse(resourceType, 0) - qty)) +
-              (Money -> (region.storedResources.getOrElse(Money, 0) + (qty*price)))
-
-            tick(state.copy(region = region.copy(storedResources = newStoredResources)))
-
-          case BuyResourceFromGovt(resourceType, qty, price) =>
-            state.governmentActor ! GovernmentActor.BuyResource(resourceType, qty)
-
-            val newStoredResources = region.storedResources +
-              (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + qty)) +
-              (Money -> (region.storedResources.getOrElse(Money, 0) - (qty * price)))
+            (region.storedResources - Food).foreach { (rt, qty) =>
+              context.ask(state.governmentActor, GetBidPrice(_, rt)) {
+                case Success(Some(price: Int)) =>
+                  econActors.getOrElse("market", List()).headOption.map { marketActor =>
+                    MakeAsk(marketActor, rt, qty, price)
+                  }.getOrElse(ActorNoOp())
+                case _ =>
+                  ActorNoOp()
+              }
+            }
 
             tick(state.copy(region = region.copy(storedResources = newStoredResources)))
 
@@ -278,6 +275,7 @@ object RegionActor {
               context.ask(state.governmentActor, GetAskPrice(_, Food)) {
                 case Success(Some(price: Int)) =>
                   val qtyToBuy = Math.min(updatedResources.getOrElse(Money, 0)/price, Math.round(region.population * 1.5f) - updatedResources(Food))
+                  // TODO replace the below message with making a bid to the market
                   context.self ! BuyResourceFromGovt(Food, qtyToBuy, price)
                   ActorNoOp()
                 case Success(_) =>
@@ -287,7 +285,6 @@ object RegionActor {
                   ActorNoOp()
               }
             }
-
 
             tick(state.copy(region = region.copy(population = newPop, storedResources = updatedResources)))
 
@@ -304,9 +301,9 @@ object RegionActor {
             val newPop = Math.round(region.population * growthFactor)
 
             println("================================")
-            println(s"population: ${region.population}")
-            println(s"growth factor: ${growthFactor}")
-            println(s"new population: ${newPop}")
+            println(s"population: $region.population")
+            println(s"growth factor: $growthFactor")
+            println(s"new population: $newPop")
             println("================================")
 
             tick(state.copy(region = region.copy(population = newPop)))
@@ -339,20 +336,38 @@ object RegionActor {
             context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
               case Success(AcceptBid()) =>
                 BuyFromSeller(sendTo, resourceType, quantity, price)
-              case Success(RejectBid(None)) =>
-                ActorNoOp()
-              case Failure(_) =>
-                ActorNoOp()
-                // TODO add case of RejectBid(Some(...
+              case Success(RejectBid(Some(co))) =>
+                MakeBid(sendTo, resourceType, co.qty, co.price)
               case _ =>
                 ActorNoOp()
 
             }
             Behaviors.same
 
+          case MakeAsk(sendTo, resourceType, quantity, price) =>
+            context.ask(sendTo, ReceiveAsk(_, resourceType, quantity, price)) {
+              case Success(AcceptAsk()) =>
+                // NOTE: based on how it works now, always initiate with BuyFromSeller
+                // and never have SellToBuyer response send a BuyFromSeller command
+                // TODO create more robust system to avoid loops
+                sendTo ! BuyFromSeller(context.self, resourceType, quantity, price)
+                ActorNoOp()
+              case Success(RejectAsk(Some(co))) =>
+                MakeAsk(sendTo, resourceType, co.qty, co.price)
+              case _ =>
+                ActorNoOp()
+            }
+            Behaviors.same
+
           case BuyFromSeller(seller, resourceType, quantity, price) =>
             seller ! SellToBuyer(context.self, resourceType, quantity, price)
             val updatedResources = region.storedResources + (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + quantity), Money -> (region.storedResources.getOrElse(Money, 0) - Math.multiplyExact(quantity, price)))
+            tick(state.copy(region = region.copy(storedResources = updatedResources)))
+
+          case SellToBuyer(buyer, resourceType, quantity, price) =>
+            val updatedResources = region.storedResources +
+              (resourceType -> (region.storedResources.getOrElse(resourceType, 0) - quantity),
+                Money -> (region.storedResources.getOrElse(Money, 0) + Math.multiplyExact(quantity, price)))
             tick(state.copy(region = region.copy(storedResources = updatedResources)))
 
 
