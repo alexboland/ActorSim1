@@ -87,7 +87,12 @@ object RegionActor {
     val agent = region
   }
 
-  case class FullInfoResponse(region: Region, gameAgents: List[GameAgent]) extends GameInfo.InfoResponse {
+  case class FullInfoResponse(
+    region: Region,
+    producers: List[Producer],
+    founders: List[Founder],
+    bank: Option[Bank],
+    market: Option[Market]) extends GameInfo.InfoResponse {
     val agent = region
   }
 
@@ -313,23 +318,70 @@ object RegionActor {
             Behaviors.same
 
           case ShowFullInfo(replyTo) =>
-            // TODO create a more structured version of this
+            // Get producers list
+            val producersFutures = econActors.getOrElse("producers", List.empty).map(actor =>
+              actor.ask(ShowInfo.apply)
+            )
 
-            val futures = econActors.values.flatten.toList.map({
-              case (actor) =>
-                actor.ask(ShowInfo.apply)
-            })
+            // Get founders list
+            val foundersFutures = econActors.getOrElse("founders", List.empty).map(actor =>
+              actor.ask(ShowInfo.apply)
+            )
 
-            val aggregateInfo = Future.sequence(futures)
+            // Get the first bank
+            val bankFuture = econActors.getOrElse("bank", List.empty).headOption.map(actor =>
+              actor.ask(ShowInfo.apply)
+            ).getOrElse(Future.successful(None))
 
-            aggregateInfo.onComplete({
-              case Success(iter: Iterable[Option[GameInfo.InfoResponse]]) =>
-                val info = iter.flatMap(_.map(_.agent)).toList
-                replyTo ! Some(FullInfoResponse(region, info))
-              case _ =>
-                println("whatever...")
+            // Get the first market
+            val marketFuture = econActors.getOrElse("market", List.empty).headOption.map(actor =>
+              actor.ask(ShowInfo.apply)
+            ).getOrElse(Future.successful(None))
 
-            })
+            // Combine all futures
+            val producersAggregate = Future.sequence(producersFutures)
+            val foundersAggregate = Future.sequence(foundersFutures)
+            val combinedFuture = for {
+              producers <- producersAggregate
+              founders <- foundersAggregate
+              bank <- bankFuture
+              market <- marketFuture
+            } yield (producers, founders, bank, market)
+
+            combinedFuture.onComplete {
+              case Success((producersInfo, foundersInfo, bankInfo, marketInfo)) =>
+                // Extract and cast producers to Producer type
+                val producersData = producersInfo.flatMap(_.map(_.agent)).collect {
+                  case agent: Producer => agent  // Cast to Producer
+                }
+
+                // Extract and cast founders to Founder type
+                val foundersData = foundersInfo.flatMap(_.map(_.agent)).collect {
+                  case agent: Founder => agent // Cast to Founder
+                }
+
+                // Extract and cast bank to Bank type
+                val bankData = bankInfo.flatMap(info =>
+                  info.agent match {
+                    case agent: Bank => Some(agent)  // Cast to Bank
+                    case _ => None
+                  }
+                )
+
+                // Extract and cast market to Market type
+                val marketData = marketInfo.flatMap(info =>
+                  info.agent match {
+                    case agent: Market => Some(agent)  // Cast to Market
+                    case _ => None
+                  }
+                )
+
+                replyTo ! Some(FullInfoResponse(region, producersData, foundersData, bankData, marketData))
+
+              case Failure(exception) =>
+                println(s"Error: ${exception.getMessage}")
+            }
+
             Behaviors.same
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
@@ -416,7 +468,7 @@ object RegionActor {
             econActors.getOrElse("market", List()).headOption match {
               case None =>
                 val market = Market.newMarket(region.id)
-                val actorRef = context.spawn(MarketActor(MarketActorState(market)), market.id)
+                val actorRef = context.spawn(MarketActor(MarketActorState(market, context.self)), market.id)
                 val newMarketVal = actorRef :: List()
                 tick(state.copy(econActors = econActors + ("market" -> newMarketVal)))
               case _ =>

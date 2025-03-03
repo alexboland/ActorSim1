@@ -114,10 +114,13 @@ object RegionRoutes {
               onComplete(infoFuture) {
                 case util.Success(maybeInfo) =>
                   maybeInfo match {
-                    case Some(RegionActor.FullInfoResponse(region, agents)) => // TODO change this to give the actual full region info
+                    case Some(RegionActor.FullInfoResponse(region, producers, founders, bank, market)) => // TODO change this to give the actual full region info
                       val response = Json.obj(
                         "region" -> region.asJson,
-                        "agents" -> agents.asJson)
+                        "producers" -> producers.asJson,
+                        "founders" -> founders.asJson,
+                        "bank" -> bank.asJson,
+                        "market" -> market.asJson)
                       complete(StatusCodes.OK, HttpEntity(ContentTypes.`application/json`, response.noSpaces))
                   }
               }

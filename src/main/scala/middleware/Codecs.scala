@@ -23,6 +23,7 @@ object JsonCodecs {
   implicit val resourceTypeDecoder: Decoder[ResourceType] = Decoder.decodeString.emap {
     case "Wood" => Right(Wood)
     case "Food" => Right(Food)
+    case "Copper" => Right(Copper)
     case s => Left(s"Invalid resource type: $s")
   }
 
@@ -35,6 +36,16 @@ object JsonCodecs {
       case "Food" => Some(Food)
       case _ => None
     }
+  }
+
+  implicit val bondEncoder: Encoder[Bond] = new Encoder[Bond] {
+    override def apply(bond: Bond): Json = Json.obj(
+      "id" -> bond.id.asJson,
+      "principal" -> bond.principal.asJson,
+      "interestRate" -> bond.interestRate.asJson,
+      "totalOutstanding" -> bond.totalOutstanding.asJson,
+      "debtorId" -> bond.debtorId.asJson
+    )
   }
 
   implicit val regionLocationEncoder: Encoder[Region.Location] = new Encoder[Region.Location] {
@@ -53,6 +64,68 @@ object JsonCodecs {
       "baseProduction" -> region.baseProduction.asJson,
       "season" -> region.season.asJson,
       "location" -> region.location.asJson
+    )
+  }
+
+  implicit val producerEncoder: Encoder[Producer] = new Encoder[Producer] {
+    final def apply(producer: Producer): Json = Json.obj(
+      "id" -> producer.id.asJson,
+      "regionId" -> producer.regionId.asJson,
+      "workers" -> producer.workers.asJson,
+      "resourceProduced" -> producer.resourceProduced.asJson,
+      "askPrice" -> producer.askPrice.asJson,
+      "storedResources" -> producer.storedResources.asJson,
+      "bidPrices" -> producer.bidPrices.asJson,
+      "wage" -> producer.wage.asJson,
+      "maxWorkers" -> producer.maxWorkers.asJson,
+      "baseProduction" -> producer.baseProduction.asJson,
+      "inputs" -> producer.inputs.asJson,
+      "multipliers" -> producer.multipliers.asJson,
+      "outstandingBonds" -> producer.outstandingBonds.asJson
+    )
+  }
+
+  implicit val marketEncoder: Encoder[Market] = new Encoder[Market] {
+    final def apply(market: Market): Json = Json.obj(
+      "id" -> market.id.asJson,
+      "regionId" -> market.regionId.asJson,
+      "localId" -> market.localId.asJson,
+      "storedResources" -> market.storedResources.asJson,
+      "buyPrices" -> market.buyPrices.asJson,
+      "sellPrices" -> market.sellPrices.asJson,
+      "outstandingBonds" -> market.outstandingBonds.asJson
+    )
+  }
+
+  implicit val bankEncoder: Encoder[Bank] = new Encoder[Bank] {
+    final def apply(bank: Bank): Json = Json.obj(
+      "id" -> bank.id.asJson,
+      "regionId" -> bank.regionId.asJson,
+      "storedMoney" -> bank.storedMoney.asJson,
+      "interestRate" -> bank.interestRate.asJson,
+      "bondsOwned" -> bank.bondsOwned.asJson,
+      "bondsIssued" -> bank.bondsIssued.asJson
+    )
+  }
+
+  implicit val constructionSiteEncoder: Encoder[ConstructionSite] = new Encoder[ConstructionSite] {
+    final def apply(site: ConstructionSite): Json = Json.obj(
+      "id" -> site.id.asJson,
+      "facility" -> site.facility.asJson,
+      "percentComplete" -> site.percentComplete.asJson,
+      "workers" -> site.workers.asJson,
+      "maxWorkers" -> site.maxWorkers.asJson,
+      "wage" -> site.wage.asJson,
+      "storedResources" -> site.storedResources.asJson,
+      "outstandingBonds" -> site.outstandingBonds.asJson
+    )
+  }
+
+  implicit val founderEncoder: Encoder[Founder] = new Encoder[Founder] {
+    final def apply(founder: Founder): Json = Json.obj(
+      "id" -> founder.id.asJson,
+      "regionId" -> founder.regionId.asJson,
+      "site" -> founder.site.asJson
     )
   }
 
