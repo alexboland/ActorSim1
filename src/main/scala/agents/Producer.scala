@@ -1,7 +1,8 @@
 package agents
 
 import agents.EconAgent.CounterOffer
-import agents.Producer._
+import agents.Market.{Ask, Bid, GetHighestBid, GetLowestAsk}
+import agents.Producer.*
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
@@ -14,7 +15,8 @@ import scala.util.{Failure, Success}
 case class ProducerActorState(
                            producer: Producer,
                            econActors: Map[String, ActorRef[BankActor.Command]],
-                           regionActor: ActorRef[RegionActor.Command]
+                           regionActor: ActorRef[RegionActor.Command],
+                           bidPrices: Map[ResourceType, Int]
                              )
 
 case class Producer(
@@ -22,9 +24,7 @@ case class Producer(
                  regionId: String,
                  workers: Int,
                  resourceProduced: ResourceType,
-                 askPrice: Int,
                  storedResources: Map[ResourceType, Int],
-                 bidPrices: Map[ResourceType, Int],
                  wage: Int,
                  maxWorkers: Int,
                  baseProduction: Int,
@@ -40,9 +40,7 @@ object Producer {
       regionId = regionId,
       workers = 0,
       resourceProduced = resourceProduced,
-      askPrice = 1, // Figure out a good way to set this later, if it's 0 worried about some race conditions
       storedResources = Map[ResourceType, Int](),
-      bidPrices = Map[ResourceType, Int](),
       wage = 0,
       maxWorkers = 10,
       baseProduction = baseProduction,
@@ -56,6 +54,8 @@ object Producer {
   case class HireWorkers() extends Command
 
   case class ProcureResource(resourceType: ResourceType, qty: Int) extends Command
+
+  case class SellResource(resourceType: ResourceType, qty: Int) extends Command
 
   case class SetAskPrice(price: Int) extends Command
 
@@ -79,39 +79,9 @@ object ProducerActor {
       val producer = state.producer
       val resourceProduced = producer.resourceProduced
       val storedResources = producer.storedResources
-      val askPrice = producer.askPrice
-      val bidPrices = producer.bidPrices
       Behaviors.receive { (context, message) =>
 
         message match {
-
-          case ReceiveBid(replyTo, resourceType, quantity, price) =>
-            // TODO possibly DRY this up by creating a generic pure function that takes in certain arguments and using that
-            if (resourceType != resourceProduced) {
-              replyTo ! RejectBid(None)
-              tick(state)
-            } else {
-              val availableToSell = Math.min(storedResources.getOrElse(resourceProduced, 0), quantity)
-              if (availableToSell == 0) {
-                replyTo ! RejectBid(None)
-                tick(state) // No resources to sell, do nothing
-              } else {
-                if (price < askPrice) {
-                  replyTo ! RejectBid(Some(CounterOffer(availableToSell, askPrice)))
-                } else {
-                  if (availableToSell < quantity) {
-                    replyTo ! RejectBid(Some(CounterOffer(availableToSell, price)))
-                  } else {
-                    // TODO need to change this because there are now cases where they may accept a bid but still not be bought from
-                    replyTo ! AcceptBid()
-                  }
-                }
-                Behaviors.same
-
-
-              }
-            }
-
           case PayWages() =>
             val workersToPay = Math.min(Math.floorDiv(storedResources.getOrElse(Money, 0), producer.wage), producer.workers)
             val updatedResources = storedResources +
@@ -148,13 +118,33 @@ object ProducerActor {
               producer = producer.copy(storedResources = updatedResources)))
 
           case ProcureResource(resourceType, quantity) =>
-            // For now, redundantly just sending itself a MakeBid message, will probably remove this intermediary
-            context.self ! MakeBid(state.regionActor, resourceType, quantity, bidPrices.getOrElse(resourceType, 0))
+            context.ask(state.regionActor, GetLowestAsk(resourceType, _)) {
+              case Success(Some(ask: Ask)) =>
+                MakeBid(state.regionActor, resourceType, quantity, ask.price)
+              case Success(None) =>
+                //Nothing to be done, next attempt at production will come with another attempt at procurement
+                ActorNoOp()
+              case _ =>
+                ActorNoOp()
+            }
+            Behaviors.same
+
+          case SellResource(resourceType, quantity) =>
+            context.ask(state.regionActor, GetHighestBid(resourceType, _)) {
+              case Success(Some(bid: Bid)) =>
+                val askPrice = Math.max(bid.price, calculateProductionCost(state))
+                MakeAsk(state.regionActor, resourceType, quantity, askPrice)
+              case Success(None) =>
+                MakeAsk(state.regionActor, resourceType, quantity, calculateProductionCost(state))
+              case _ =>
+                ActorNoOp()
+            }
             Behaviors.same
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
             sendTo ! ReceiveBid(context.self, resourceType, quantity, price)
-            Behaviors.same
+            val updatedBidPrices = state.bidPrices + (resourceType -> price)
+            tick(state = state.copy(bidPrices = updatedBidPrices))
 
           case MakeAsk(sendTo, resourceType, quantity, price) =>
             sendTo ! ReceiveAsk(context.self, resourceType, quantity, price)
@@ -262,5 +252,36 @@ object ProducerActor {
 
       tick(state)
     }
+  }
+
+  def calculateProductionCost(state: ProducerActorState): Int = {
+    val producer = state.producer
+
+    // Calculate input costs
+    val inputCosts = producer.inputs.map { case (resourceType, amountNeeded) =>
+      val pricePerUnit = state.bidPrices.getOrElse(resourceType, 0)
+      amountNeeded * pricePerUnit
+    }.sum
+
+    // Calculate labor costs
+    val laborCosts = producer.workers * producer.wage
+
+    // Calculate bond repayment costs
+    val bondRepaymentCosts = if (producer.outstandingBonds.isEmpty) {
+      0
+    } else {
+      producer.outstandingBonds.values.map { bond =>
+        val interestPayment = (bond.totalOutstanding * bond.interestRate).toInt - bond.totalOutstanding
+        val principalPayment = Math.ceil(bond.totalOutstanding / 10.0).toInt // Assume paying 10% of principal per cycle
+        interestPayment + principalPayment
+      }.sum
+    }
+
+    // Calculate total cost and cost per unit
+    val totalCost = inputCosts + laborCosts + bondRepaymentCosts
+    val productionAmount = Math.max(1, producer.baseProduction * producer.workers) // Ensure we don't divide by zero
+    val costPerUnit = Math.ceil(totalCost.toDouble / productionAmount).toInt
+
+    costPerUnit
   }
 }

@@ -1,7 +1,7 @@
 package agents
 
 import agents.EconAgent.CounterOffer
-import agents.Market.GetLowestAsk
+import agents.Market.{Ask, Bid, GetHighestBid, GetLowestAsk}
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
@@ -131,7 +131,7 @@ object RegionActor {
 
   case class AssignWorkers(qty: Int) extends RegionCommand
 
-  type Command = RegionCommand | EconAgent.Command | GameActorCommand | BankingCommand
+  type Command = RegionCommand | EconAgent.Command | GameActorCommand | BankingCommand | Market.Command
 
   implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
@@ -163,6 +163,32 @@ object RegionActor {
             econActors.getOrElse("market", List()).headOption.map { marketActor =>
               if (replyTo != marketActor) {
                 marketActor ! ReceiveAsk(replyTo, resourceType, quantity, price)
+              }
+              Behaviors.same
+            }.getOrElse(Behaviors.same)
+
+          case GetHighestBid(resourceType, replyTo) =>
+            econActors.getOrElse("market", List()).headOption.collect { case actor: ActorRef[MarketActor.Command] => actor }.map { marketActor =>
+              context.ask(marketActor, GetHighestBid(resourceType, _)) {
+                case Success(bidOpt: Option[Bid]) =>
+                  replyTo ! bidOpt
+                  ActorNoOp()
+                case _ =>
+                  println("Some kind of error...")
+                  ActorNoOp()
+              }
+              Behaviors.same
+            }.getOrElse(Behaviors.same)
+
+          case GetLowestAsk(resourceType, replyTo) =>
+            econActors.getOrElse("market", List()).headOption.collect { case actor: ActorRef[MarketActor.Command] => actor }.map { marketActor =>
+              context.ask(marketActor, GetLowestAsk(resourceType, _)) {
+                case Success(askOpt: Option[Ask]) =>
+                  replyTo ! askOpt
+                  ActorNoOp()
+                case _ =>
+                  println("Some kind of error...")
+                  ActorNoOp()
               }
               Behaviors.same
             }.getOrElse(Behaviors.same)
@@ -436,7 +462,7 @@ object RegionActor {
             }
 
           case BuildProducer(producer) =>
-            val actorRef = context.spawn(ProducerActor(ProducerActorState(producer, Map(), context.self)), producer.id)
+            val actorRef = context.spawn(ProducerActor(ProducerActorState(producer, Map(), context.self, Map())), producer.id)
             val updatedProducers = actorRef :: econActors.getOrElse("producers", List())
             tick(state.copy(econActors = econActors + ("producers" -> updatedProducers)))
 
