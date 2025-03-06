@@ -1,7 +1,7 @@
 package agents
 
 import agents.EconAgent.CounterOffer
-import agents.Market.GetSellPrice
+import agents.Market.GetLowestAsk
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
@@ -145,67 +145,27 @@ object RegionActor {
         val region = state.region
         val econActors = state.econActors
         message match {
-          // For the time being, bids from/to market will be mediated through region agent
+          // For encapsulation, bids/asks from producers will be mediated through region agent into the market
           case ReceiveBid(replyTo, resourceType, quantity, price) =>
-            econActors.getOrElse("market", List()).headOption match {
-              case Some(marketActor) =>
-                if (replyTo != marketActor) {
-                  marketActor ! ReceiveBid(replyTo, resourceType, quantity, price)
-                } else {
-                  // If the bid is coming from the market, search for appropriate producers to forward things to
-                  // For now, however, just send bids to all producers: will worry about efficiency later
-
-                  //Collect all responses and look for one that provides the right quantity and price
-                  // If none exist, look for the cheapest counter-offer and return that to the market.
-                  // The market can decide from there whether to accept and how to procure the rest
-                  val futures = econActors.getOrElse("producers", List()).map({
-                    case (actor) =>
-                      actor.ask(ReceiveBid(_, resourceType, quantity, price))
-                  })
-
-                  val aggregateResponses = Future.sequence(futures)
-
-                  aggregateResponses.onComplete({
-                    case Success(responses) =>
-                      val bestResponse = responses.collectFirst {
-                        case accept @ AcceptBid() => accept
-                      }.getOrElse {
-                        responses.collect { case RejectBid(Some(co)) => co }
-                          .minByOption(_.price) // Find the lowest price
-                          .map(co => RejectBid(Some(co))) // Wrap it back in RejectBid
-                          .getOrElse(RejectBid(None)) // If nothing is found, return RejectBid(None)
-                      }
-                      replyTo ! bestResponse
-                    case _ =>
-                      println("whatever...")
-
-                  })
-                  Behaviors.same
-
-                  // For now, at least have founder objects receive these bids
-                  econActors.getOrElse("founders", List()).foreach { actorRef =>
-                    actorRef ! ReceiveBid(replyTo, resourceType, quantity, price)
-                  }
-
-                }
-                Behaviors.same
-              case None =>
-                Behaviors.same // This should never happen anyway
-            }
+            econActors.getOrElse("market", List()).headOption.map { marketActor =>
+              if (replyTo != marketActor) {
+                marketActor ! ReceiveBid(replyTo, resourceType, quantity, price)
+              } else {
+                // If the market is "making a bid" it's to forward unmet demand to founders
+                econActors.get("founders").map(_.map { founderActor =>
+                  founderActor ! ReceiveBid(replyTo, resourceType, quantity, price)
+                })
+              }
+              Behaviors.same
+            }.getOrElse(Behaviors.same)
 
           case ReceiveAsk(replyTo, resourceType, quantity, price) =>
-            econActors.getOrElse("market", List()).headOption match {
-              case Some(marketActor) =>
-                if (replyTo != marketActor) {
-                  marketActor ! ReceiveAsk(replyTo, resourceType, quantity, price)
-                } else {
-                  // If the ask is coming from the market, search for appropriate resource producers to forward things to
-                  // But there's no plan to use this functionality here, still...
-                }
-                Behaviors.same
-              case None =>
-                Behaviors.same // This should never happen anyway
-            }
+            econActors.getOrElse("market", List()).headOption.map { marketActor =>
+              if (replyTo != marketActor) {
+                marketActor ! ReceiveAsk(replyTo, resourceType, quantity, price)
+              }
+              Behaviors.same
+            }.getOrElse(Behaviors.same)
 
           case ReceiveBond(bond, replyTo, issuedFrom) =>
             // For now, if the bond is being issued by a (the) bank, forward to government (central bank)
@@ -427,7 +387,7 @@ object RegionActor {
             if (region.population - region.assignedWorkers > 0) {
               econActors.getOrElse("market", List()).headOption match {
                 case Some(marketActor: ActorRef[MarketActor.Command]) =>
-                  context.ask(marketActor, GetSellPrice(_, Food)) {
+                  context.ask(marketActor, GetLowestAsk(Food, _)) {
                     case Success(Some(foodPrice: Int)) =>
                       if (price >= foodPrice) {
                         replyTo ! Right(())
@@ -481,12 +441,19 @@ object RegionActor {
             tick(state.copy(econActors = econActors + ("producers" -> updatedProducers)))
 
           case SpawnFounder() =>
-            val newId = UUID.randomUUID().toString
-            val newFounder = Founder(newId, region.id, None)
-            val actorRef = context.spawn(FounderActor(FounderActorState(newFounder, context.self)), newId)
-            val updatedFounders = actorRef :: econActors.getOrElse("founders", List())
-            val updatedActors = econActors + ("founders" -> updatedFounders)
-            tick(state.copy(econActors = updatedActors))
+            // Heuristic for limiting amount of founders happening at once
+            // TODO figure out ways to vary the "temperament" of different founders so they all respond to bid signals differently
+            // As of right now, this is going to cause all of them to overproduce on the same thing
+            if (econActors.getOrElse("founders", List()).length < 3) {
+              val newId = UUID.randomUUID().toString
+              val newFounder = Founder(newId, region.id, None)
+              val actorRef = context.spawn(FounderActor(FounderActorState(newFounder, context.self)), newId)
+              val updatedFounders = actorRef :: econActors.getOrElse("founders", List())
+              val updatedActors = econActors + ("founders" -> updatedFounders)
+              tick(state.copy(econActors = updatedActors))
+            } else {
+              Behaviors.same
+            }
 
           case UnassignWorkers(qty) =>
             tick(state.copy(region = region.copy(assignedWorkers = region.assignedWorkers - qty)))
@@ -522,7 +489,7 @@ object RegionActor {
       timers.startTimerWithFixedDelay("seasonChange", ChangeSeason(), 40.second)
 
       // Spawn the initial founder
-      timers.startSingleTimer("spawn_founder", SpawnFounder(), 2.second)
+      timers.startSingleTimer("spawn_founder", SpawnFounder(), 10.second)
 
 
       tick(state)

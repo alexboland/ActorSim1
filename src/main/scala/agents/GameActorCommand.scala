@@ -105,3 +105,7 @@ case class GetBidPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceTyp
 
 case class GetAskPrice(replyTo: ActorRef[Option[Int]], resourceType: ResourceType)
   extends EconAgent.Command with ResourceProducer.Command with GovernmentActor.GovtCommand
+
+case class PurchaseResource(resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+
+case class ReceiveSalePayment(amount: Int) extends EconAgent.Command

@@ -84,16 +84,13 @@ object JsonCodecs {
       "outstandingBonds" -> producer.outstandingBonds.asJson
     )
   }
-
+  
+  // TODO figure out if/how I want to encode bids/asks if at all. If so, I would probably want the actual UUIDs of the respective producers, which could make this more convoluted.
   implicit val marketEncoder: Encoder[Market] = new Encoder[Market] {
     final def apply(market: Market): Json = Json.obj(
       "id" -> market.id.asJson,
       "regionId" -> market.regionId.asJson,
       "localId" -> market.localId.asJson,
-      "storedResources" -> market.storedResources.asJson,
-      "buyPrices" -> market.buyPrices.asJson,
-      "sellPrices" -> market.sellPrices.asJson,
-      "outstandingBonds" -> market.outstandingBonds.asJson
     )
   }
 

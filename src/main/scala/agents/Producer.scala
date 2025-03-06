@@ -152,37 +152,43 @@ object ProducerActor {
             context.self ! MakeBid(state.regionActor, resourceType, quantity, bidPrices.getOrElse(resourceType, 0))
             Behaviors.same
 
-          // TODO possibly refactor according to my notes
           case MakeBid(sendTo, resourceType, quantity, price) =>
-            context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
-              case Success(AcceptBid()) =>
-                BuyFromSeller(sendTo, resourceType, quantity, price)
-              case (Success(RejectBid(Some(CounterOffer(qty, newPrice))))) =>
-                // TODO add wages to total inputs once I switch wages to be per output rather than per time period
-                val newInputsCost = bidPrices.values.sum - price + newPrice
-                if (newInputsCost > askPrice) {
-                  context.self ! SetAskPrice(newInputsCost + 1)
-                  context.self ! SetBidPrice(resourceType, newPrice)
-                }
-                MakeBid(sendTo, resourceType, qty, newPrice)
-              case Success(RejectBid(None)) =>
-                ActorNoOp()
-              case _ =>
-                ActorNoOp()
-            }
+            sendTo ! ReceiveBid(context.self, resourceType, quantity, price)
             Behaviors.same
 
+          case MakeAsk(sendTo, resourceType, quantity, price) =>
+            sendTo ! ReceiveAsk(context.self, resourceType, quantity, price)
+            // Put resource in "escrow"--they'll get it back if the ask is withdrawn from the market
+            val updatedResources = storedResources +
+              (resourceType -> (storedResources.getOrElse(resourceType, 0) - quantity))
+
+            tick(state = state.copy(producer = producer.copy(storedResources = updatedResources)))
+
+          case PurchaseResource(resourceType, quantity, price) =>
+            val updatedResources = storedResources +
+              (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
+              (Money -> (storedResources.getOrElse(Money, 0) - (quantity*price)))
+            tick(state.copy(producer = producer.copy(storedResources = updatedResources)))
+
+            // As of right now, the resource for sale is in "escrow" so this just handles giving the actor money
+          case ReceiveSalePayment(amount) =>
+            val updatedResources = storedResources +
+              (Money -> (storedResources.getOrElse(Money, 0) + amount))
+            tick(state.copy(producer = producer.copy(storedResources = updatedResources)))
+
+            // Deprecated for now
           case BuyFromSeller(seller, resourceType, quantity, price) =>
             seller ! SellToBuyer(context.self, resourceType, quantity, price)
             val updatedResources = storedResources +
-              (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) + quantity)) +
+              (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
               (Money -> (storedResources(Money) - Math.multiplyExact(quantity, price)))
             tick(state.copy(
               producer = producer.copy(storedResources = updatedResources)))
 
+            // Deprecated for now
           case SellToBuyer(buyer, resourceType, quantity, price) =>
             val updatedResources = storedResources +
-              (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) - quantity)) +
+              (resourceType-> (storedResources.getOrElse(resourceType, 0) - quantity)) +
               (Money -> (storedResources(Money) + Math.multiplyExact(quantity, price)))
             tick(state.copy(
               producer = producer.copy(storedResources = updatedResources)))
