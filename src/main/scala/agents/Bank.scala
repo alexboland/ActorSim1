@@ -29,7 +29,7 @@ case class Bank(
                storedMoney: Int,
                interestRate: Double,
                bondsOwned: Map[String, Bond],
-               bondsIssued: Map[String, Bond]
+               outstandingBonds: Map[String, Bond]
                ) extends EconAgent
 
 object Bank {
@@ -40,7 +40,7 @@ object Bank {
       storedMoney = 0,
       interestRate = 0.05,
       bondsOwned = Map(),
-      bondsIssued = Map()
+      outstandingBonds = Map()
     )
   }
 }
@@ -70,9 +70,10 @@ object BankActor {
               // as of right now, it will simply borrow any money needed to buy the bond from the government (central bank)
               // will deal with more serious constraints later
               if (bank.storedMoney < bond.principal) {
+                println(s"===BANK HAS ${bank.storedMoney} BUT PRINCIPAL IS ${bond.principal}, ISSUING BOND===")
                 // borrow money to cover cost
                 // TODO additional money will come from deposits by region/producers, but for now this will suffice
-                state.regionActor ! IssueBond(state.regionActor, bond.principal, bank.interestRate * 0.9)
+                context.self ! IssueBond(state.regionActor, bond.principal, bank.interestRate * 0.9)
               }
               replyTo ! Some(bond.copy(interestRate = bank.interestRate)) // TODO consider risks of having ID mess up matching
               timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond, Math.round(bond.principal/10)), 20.second)
@@ -87,15 +88,18 @@ object BankActor {
               val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, bank.id)
               context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
                 case Success(Some(offered: Bond)) =>
-                  if (bond == offered) {
-                    AddOutstandingBond(bond)
-                  } else {
-                    IssueBond(sendTo, offered.principal, offered.interestRate) // Repeat but with their counteroffer
-                  }
+                  AddOutstandingBond(offered) // for now, just acccept whatever the counteroffer is
                 case _ =>
                   ActorNoOp()
               }
               Behaviors.same
+
+            case AddOutstandingBond(bond) =>
+              val newOutstandingBonds = bank.outstandingBonds + (bond.id -> bond)
+              println(s"===BANK RECEIVING ${bond.principal}, FUNDS NOW GOING FROM ${bank.storedMoney} to ${bank.storedMoney + bond.principal}===")
+              tick(state = state.copy(bank = bank.copy(
+                storedMoney = (bank.storedMoney + bond.principal),
+                outstandingBonds = newOutstandingBonds)))
 
             case CollectBondPayment(bond, amount) =>
               state.econActors.get(bond.debtorId) match {

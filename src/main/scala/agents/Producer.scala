@@ -80,7 +80,6 @@ object ProducerActor {
       val resourceProduced = producer.resourceProduced
       val storedResources = producer.storedResources
       Behaviors.receive { (context, message) =>
-
         message match {
           case PayWages() =>
             val workersToPay = Math.min(Math.floorDiv(storedResources.getOrElse(Money, 0), producer.wage), producer.workers)
@@ -210,11 +209,7 @@ object ProducerActor {
             val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, producer.id)
               context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
                 case Success(Some(offered: Bond)) =>
-                  if (bond == offered) {
-                    AddOutstandingBond(bond)
-                  } else {
-                    IssueBond(sendTo, offered.principal, offered.interestRate) // Repeat but with their counteroffer
-                  }
+                    AddOutstandingBond(bond) //for now just accept whatever the bond is
                 case _ =>
                   ActorNoOp()
               }
@@ -229,6 +224,7 @@ object ProducerActor {
 
           case PayBond(bond, amount, replyTo) =>
             val amountToPay = Math.min(storedResources.getOrElse(Money, 0), amount) // For now just have it pay what it can without defaults
+            println(s"===PRODUCER ${producer.id} MAKING BOND PAYMENT OF ${amountToPay} FROM RESERVES OF ${storedResources.getOrElse(Money, 0)}===")
             val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay)*bond.interestRate).toInt)
             val newOutstandingBonds = if (updatedBond.totalOutstanding <= 0) {
               producer.outstandingBonds - bond.id

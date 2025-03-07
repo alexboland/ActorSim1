@@ -198,14 +198,17 @@ object RegionActor {
             // Otherwise, forward to the one bank in the region
             // This will almost certainly change in future iterations
             econActors.getOrElse("bank", List()).headOption match {
+              //Found a serious bug here: the replyTo is a temporary actor, not the actor itself, so I need to find a way to get identifying information
               case Some(bankActor: ActorRef[BankActor.Command]) =>
                 if (replyTo == bankActor) {
                   state.governmentActor ! ReceiveBond(bond, replyTo, issuedFrom)
                 } else {
                   bankActor ! ReceiveBond(bond, replyTo, issuedFrom)
                 }
+                Behaviors.same
+              case _ =>
+                Behaviors.same
             }
-            Behaviors.same
 
           /*case DiscoverResource(resourceType, quantity) =>
             val newNaturalResources = region.baseProduction.updated(resourceType, region.baseProduction(resourceType) + quantity)

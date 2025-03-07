@@ -110,7 +110,7 @@ object JsonCodecs {
       "storedMoney" -> bank.storedMoney.asJson,
       "interestRate" -> bank.interestRate.asJson,
       "bondsOwned" -> bank.bondsOwned.asJson,
-      "bondsIssued" -> bank.bondsIssued.asJson
+      "outstandingBonds" -> bank.outstandingBonds.asJson
     )
   }
 
