@@ -96,6 +96,7 @@ object ManagerActor {
 
 
       case CreateRegions(locations, replyTo) =>
+        println("======CREATE REGIONS CALLED========")
         government match {
           case Some(govt) =>
             val actorRefs = locations.foldLeft(List[ActorRef[RegionActor.Command]]()) { (acc, location) =>

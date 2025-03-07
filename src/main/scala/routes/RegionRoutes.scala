@@ -121,7 +121,15 @@ object RegionRoutes {
                         "founders" -> founders.asJson,
                         "bank" -> bank.asJson,
                         "market" -> market.asJson)
+                      println("===SUCCESSFULLY CONSTRUCTED RESPONSE===")
                       complete(StatusCodes.OK, HttpEntity(ContentTypes.`application/json`, response.noSpaces))
+                    case Some(otherResponse) =>
+                      println("SOME OTHER RESPONSE")
+                      println(otherResponse)
+                      complete(StatusCodes.InternalServerError)
+                    case _ =>
+                      println("NADA")
+                      complete(StatusCodes.InternalServerError)
                   }
               }
             }

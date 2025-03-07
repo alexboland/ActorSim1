@@ -5,6 +5,7 @@ import agents.RegionActor.{BuildProducer, UnassignWorkers}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
+import middleware.GameInfo
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
@@ -51,6 +52,10 @@ object Founder {
 object FounderActor {
   type Command = EconAgent.Command | Founder.Command | GameActorCommand
 
+  case class InfoResponse(founder: Founder) extends GameInfo.InfoResponse {
+    override val agent: Founder = founder
+  }
+
   implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
 
@@ -60,6 +65,10 @@ object FounderActor {
         Behaviors.receive { (context, message) =>
           val founder = state.founder
           message match {
+            case ShowInfo(replyTo) =>
+              replyTo ! Some(InfoResponse(founder))
+              Behaviors.same
+
             case ReceiveBid(replyTo, resourceType, quantity, price) =>
               // Bids here are used to goad the founder into investing
               // Need to figure out the best way to map resourceType to type of facility to build
@@ -88,6 +97,10 @@ object FounderActor {
           val founder = state.founder
           // TODO refactor by having the site option matched for in a way that wraps around the message match
           message match {
+            case ShowInfo(replyTo) =>
+              replyTo ! Some(InfoResponse(founder))
+              Behaviors.same
+
             case IssueBond(sendTo, principal, interest) =>
               val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, founder.id)
               context.ask(sendTo, ReceiveBond(bond, _, context.self)) {

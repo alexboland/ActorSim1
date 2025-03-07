@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Delaunay } from 'd3-delaunay';
 import * as d3 from 'd3';
+import RegionModal from './RegionModal'; // Import the RegionModal component
 
 const RegionTooltip = ({ region, latestData, position }) => {
     if (!position) return null;
@@ -113,8 +114,6 @@ const RegionVertex = ({
     </foreignObject>
   )}
   </>
-
-    
   );
 };
 
@@ -127,9 +126,25 @@ const RegionsMap = ({
   // Camera state
   const [camera, setCamera] = useState(initialCamera);
   
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedRegionId, setSelectedRegionId] = useState(null);
+  
   // SVG dimensions for display (viewport)
   const WIDTH = 1200;
   const HEIGHT = 800;
+
+  // Handle region click to open modal
+  const handleRegionClick = (region) => {
+    setSelectedRegionId(region.id);
+    setIsModalOpen(true);
+    console.log('Opening modal for region', region.id);
+  };
+
+  // Handle modal close
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+  };
 
   // Compute the voronoi cells and assign random pastel colors to each cell.
   // The cells are computed from the absolute positions of regions,
@@ -211,7 +226,7 @@ const RegionsMap = ({
               key={region.id}
               region={region}
               viewTransform={viewTransform}
-              onRegionClick={() => console.log('Clicked region', region)}
+              onRegionClick={handleRegionClick}
             />
           ))}
         </g>
@@ -243,6 +258,13 @@ const RegionsMap = ({
           Reset
         </button>
       </div>
+
+      {/* Region Modal */}
+      <RegionModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        regionId={selectedRegionId}
+      />
     </div>
   );
 };

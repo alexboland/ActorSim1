@@ -291,11 +291,11 @@ object RegionActor {
 
             val newPop = Math.round(region.population * growthFactor)
 
-            println("================================")
+            /*println("================================")
             println(s"population: $region.population")
             println(s"growth factor: $growthFactor")
             println(s"new population: $newPop")
-            println("================================")
+            println("================================")*/
 
             tick(state.copy(region = region.copy(population = newPop)))
 
@@ -304,70 +304,174 @@ object RegionActor {
             Behaviors.same
 
           case ShowFullInfo(replyTo) =>
+            //println(s"[DEBUG] ShowFullInfo received for region ${region.id}")
+
             // Get producers list
-            val producersFutures = econActors.getOrElse("producers", List.empty).map(actor =>
+            //println(s"[DEBUG] Found ${econActors.getOrElse("producers", List.empty).size} producers")
+            val producersFutures = econActors.getOrElse("producers", List.empty).map(actor => {
+              //println(s"[DEBUG] Asking producer ${actor.path.name} for info")
               actor.ask(ShowInfo.apply)
-            )
+            })
 
             // Get founders list
-            val foundersFutures = econActors.getOrElse("founders", List.empty).map(actor =>
+            //println(s"[DEBUG] Found ${econActors.getOrElse("founders", List.empty).size} founders")
+            val foundersFutures = econActors.getOrElse("founders", List.empty).map(actor => {
+              //println(s"[DEBUG] Asking founder ${actor.path.name} for info")
               actor.ask(ShowInfo.apply)
-            )
+            })
 
             // Get the first bank
-            val bankFuture = econActors.getOrElse("bank", List.empty).headOption.map(actor =>
+            //println(s"[DEBUG] Bank exists: ${econActors.getOrElse("bank", List.empty).headOption.isDefined}")
+            val bankFuture = econActors.getOrElse("bank", List.empty).headOption.map(actor => {
+              //println(s"[DEBUG] Asking bank ${actor.path.name} for info")
               actor.ask(ShowInfo.apply)
-            ).getOrElse(Future.successful(None))
+            }).getOrElse({
+              //println("[DEBUG] No bank found, using empty future")
+              Future.successful(None)
+            })
 
             // Get the first market
-            val marketFuture = econActors.getOrElse("market", List.empty).headOption.map(actor =>
+            //println(s"[DEBUG] Market exists: ${econActors.getOrElse("market", List.empty).headOption.isDefined}")
+            val marketFuture = econActors.getOrElse("market", List.empty).headOption.map(actor => {
+              //println(s"[DEBUG] Asking market ${actor.path.name} for info")
               actor.ask(ShowInfo.apply)
-            ).getOrElse(Future.successful(None))
+            }).getOrElse({
+              //println("[DEBUG] No market found, using empty future")
+              Future.successful(None)
+            })
 
             // Combine all futures
+            //println("[DEBUG] Starting to combine futures")
             val producersAggregate = Future.sequence(producersFutures)
             val foundersAggregate = Future.sequence(foundersFutures)
+
+            //println("[DEBUG] Creating combined future with for-comprehension")
             val combinedFuture = for {
               producers <- producersAggregate
+              //_ = println(s"[DEBUG] Received responses from ${producers.size} producers")
               founders <- foundersAggregate
+              //_ = println(s"[DEBUG] Received responses from ${founders.size} founders")
               bank <- bankFuture
+              //_ = println(s"[DEBUG] Received bank response: ${bank.isDefined}")
               market <- marketFuture
+              //_ = println(s"[DEBUG] Received market response: ${market.isDefined}")
             } yield (producers, founders, bank, market)
 
+            //println("[DEBUG] Setting up onComplete handler for combined future")
             combinedFuture.onComplete {
               case Success((producersInfo, foundersInfo, bankInfo, marketInfo)) =>
+                //println("[DEBUG] Combined future completed successfully")
+
                 // Extract and cast producers to Producer type
-                val producersData = producersInfo.flatMap(_.map(_.agent)).collect {
-                  case agent: Producer => agent  // Cast to Producer
+                //println(s"[DEBUG] Processing ${producersInfo.size} producer responses")
+                val producersData = try {
+                  val result = producersInfo.flatMap(info => {
+                    //println(s"[DEBUG] Processing producer info: ${info}")
+                    info.map(infoResponse => {
+                      //println(s"[DEBUG] Processing producer agent: ${infoResponse.agent.getClass.getName}")
+                      infoResponse.agent
+                    })
+                  }).collect {
+                    case agent: Producer =>
+                      //println(s"[DEBUG] Successfully cast producer agent: ${agent.id}")
+                      agent  // Cast to Producer
+                  }
+                  //println(s"[DEBUG] Extracted ${result.size} valid producers")
+                  result
+                } catch {
+                  case e: Exception =>
+                    //println(s"[DEBUG] Exception processing producers: ${e.getMessage}")
+                    List.empty
                 }
 
                 // Extract and cast founders to Founder type
-                val foundersData = foundersInfo.flatMap(_.map(_.agent)).collect {
-                  case agent: Founder => agent // Cast to Founder
+                //println(s"[DEBUG] Processing ${foundersInfo.size} founder responses")
+                val foundersData = try {
+                  val result = foundersInfo.flatMap(info => {
+                    //println(s"[DEBUG] Processing founder info: ${info}")
+                    info.map(infoResponse => {
+                      //println(s"[DEBUG] Processing founder agent: ${infoResponse.agent.getClass.getName}")
+                      infoResponse.agent
+                    })
+                  }).collect {
+                    case agent: Founder =>
+                      //println(s"[DEBUG] Successfully cast founder agent: ${agent.id}")
+                      agent // Cast to Founder
+                  }
+                  //println(s"[DEBUG] Extracted ${result.size} valid founders")
+                  result
+                } catch {
+                  case e: Exception =>
+                    //println(s"[DEBUG] Exception processing founders: ${e.getMessage}")
+                    List.empty
                 }
 
                 // Extract and cast bank to Bank type
-                val bankData = bankInfo.flatMap(info =>
-                  info.agent match {
-                    case agent: Bank => Some(agent)  // Cast to Bank
-                    case _ => None
-                  }
-                )
+                //println(s"[DEBUG] Processing bank response: ${bankInfo}")
+                val bankData = try {
+                  val result = bankInfo.flatMap(info => {
+                    //println(s"[DEBUG] Processing bank info agent: ${if (info != null) info.agent.getClass.getName else "null"}")
+                    info.agent match {
+                      case agent: Bank =>
+                        //println(s"[DEBUG] Successfully cast bank agent: ${agent.id}")
+                        Some(agent)  // Cast to Bank
+                      case other =>
+                        //println(s"[DEBUG] Failed to cast bank agent: ${other.getClass.getName}")
+                        None
+                    }
+                  })
+                  //println(s"[DEBUG] Bank data extracted: ${result.isDefined}")
+                  result
+                } catch {
+                  case e: Exception =>
+                    //println(s"[DEBUG] Exception processing bank: ${e.getMessage}")
+                    None
+                }
 
                 // Extract and cast market to Market type
-                val marketData = marketInfo.flatMap(info =>
-                  info.agent match {
-                    case agent: Market => Some(agent)  // Cast to Market
-                    case _ => None
-                  }
-                )
+                //println(s"[DEBUG] Processing market response: ${marketInfo}")
+                val marketData = try {
+                  val result = marketInfo.flatMap(info => {
+                    //println(s"[DEBUG] Processing market info agent: ${if (info != null) info.agent.getClass.getName else "null"}")
+                    info.agent match {
+                      case agent: Market =>
+                        //println(s"[DEBUG] Successfully cast market agent: ${agent.id}")
+                        Some(agent)  // Cast to Market
+                      case other =>
+                        //println(s"[DEBUG] Failed to cast market agent: ${other.getClass.getName}")
+                        None
+                    }
+                  })
+                  //println(s"[DEBUG] Market data extracted: ${result.isDefined}")
+                  result
+                } catch {
+                  case e: Exception =>
+                    //println(s"[DEBUG] Exception processing market: ${e.getMessage}")
+                    None
+                }
 
-                replyTo ! Some(FullInfoResponse(region, producersData, foundersData, bankData, marketData))
+                //println("[DEBUG] Creating FullInfoResponse")
+                try {
+                  val response = FullInfoResponse(region, producersData, foundersData, bankData, marketData)
+                  //println("[DEBUG] Sending response back to requester")
+                  replyTo ! Some(response)
+                  //println("[DEBUG] Response sent successfully")
+                } catch {
+                  case e: Exception =>
+                    //println(s"[DEBUG] Error creating or sending FullInfoResponse: ${e.getMessage}")
+                    //println(s"[DEBUG] Sending simplified response")
+                    replyTo ! Some(FullInfoResponse(region, List.empty, List.empty, None, None))
+                }
 
               case Failure(exception) =>
-                println(s"Error: ${exception.getMessage}")
+                //println(s"[DEBUG] Combined future failed: ${exception.getMessage}")
+                //println(s"[DEBUG] Exception class: ${exception.getClass.getName}")
+                //println(s"[DEBUG] Exception cause: ${if (exception.getCause != null) exception.getCause.getMessage else "none"}")
+                //println(s"[DEBUG] Sending simplified response due to failure")
+                replyTo ! Some(FullInfoResponse(region, List.empty, List.empty, None, None))
             }
 
+            //println("[DEBUG] ShowFullInfo handler completed, returning Behaviors.same")
             Behaviors.same
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
@@ -515,7 +619,11 @@ object RegionActor {
       timers.startTimerWithFixedDelay("seasonChange", ChangeSeason(), 40.second)
 
       // Spawn the initial founder
-      timers.startSingleTimer("spawn_founder", SpawnFounder(), 10.second)
+      timers.startTimerWithFixedDelay("spawn_founder", SpawnFounder(), 20.second)
+
+      // Spawn the market and thee bank
+      timers.startSingleTimer("spawn_market", BuildMarket(), 1.second)
+      timers.startSingleTimer("spawn_bank", BuildBank(), 1.second)
 
 
       tick(state)

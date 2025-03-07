@@ -9,133 +9,122 @@ const App = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-
-    const seedRegions = async () => {
-      // Set up dimensions and number of points.
-      const width = 7200;
-      const height = 4200;
-      const numPoints = 50; // Adjust the number of vertices as desired
-
-      // Generate an array of random points: each point is an array [x, y].
-      const points = d3.range(numPoints).map(() => ({
-        x: Math.round(Math.random() * width),
-        y: Math.round(Math.random() * height)
-      }));
-
-      // Compute the Delaunay triangulation from the points.
-      // D3’s Delaunay is dual to the Voronoi diagram.
-      //const delaunay = d3.Delaunay.from(points);
-      // Create a Voronoi diagram within our bounds.
-      //const voronoi = delaunay.voronoi([0, 0, width, height]);
-
-      // Select the SVG element and set its width and height.
-      /*const svg = d3.select("#svg")
-        .attr("width", width)
-        .attr("height", height);*/
-
-      const edges = [];
-      /*points.forEach((p, i) => {
-        // For each neighbor index j of point i...
-        for (const j of voronoi.neighbors(i)) {
-          // To avoid drawing duplicate edges, only add when i < j.
-          if (i < j) {
-            edges.push({ source: p, target: points[j] });
-          }
-        }
-      });*/
-          
-      //TODO use list of edges to create roads
-
-      console.log("points: ")
-      console.log(points);
-
+    // Combined function to initialize government and fetch/seed regions
+    const initializeApp = async () => {
+      setLoading(true);
       try {
-        console.log("==========")
-        console.log(JSON.stringify({
-          locations: points
-        }))
-        console.log("============")
+        // First initialize government
+        await initializeGovernment();
 
-        const fetchRegionsResponse = await fetch('http://localhost:8080/regions');
-        console.log("fetch regions response");
-        console.log(fetchRegionsResponse);
-        const fetchedRegions = await fetchRegionsResponse.json();
-        console.log("fetched regions");
-
-        if (fetchedRegions.length === 0) {
-
-          const response = await fetch('http://localhost:8080/regions/seed', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              locations: points
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to seed regions! Status: ${response.status}`);
-          }
-
-          const seededRegions = await response.json();
-
-          console.log("GETTING THIS FAR");
-
-
-          console.log(seededRegions);
-            
-          // Convert array of regions to map and update state
-          console.log("====MAP=====");
-          console.log(seededRegions)
-          const regionsMap = seededRegions.uuids.reduce((acc, uuid) => {
-            acc[uuid] = {uuid, population: 100 };
-            return acc;
-          }, {});
-          setRegions(regionsMap);
-      } else {
-        console.log("=====FETCHED REGIONS======");
-        console.log(fetchedRegions);
-        console.log("==========================")
-        setRegions(fetchedRegions)
-      }
-        
+        // Then check if regions exist and seed only if needed
+        await fetchOrSeedRegions();
       } catch (error) {
-        console.error('Failed to seed regions:', error);
-      }
-
-
-    }
-
-    const initializeGovernment = async () => {
-      try {
-        setLoading(true);
-        // First, try to ping the existing government 
-        let response = await fetch('http://localhost:8080/government/ping');
-        if (!response.ok) {
-          // If ping fails, create a new government
-          // Eventually government will be structured differently but for now it's basically the "world"
-          response = await fetch('http://localhost:8080/government/create', { method: 'POST' });
-        }
- 
-        const data = await response.json();
-        console.log("Received government data:", data); // Add this line for debugging
-
-        setGovernment(data);
-      } catch (error) {
-        console.error('Failed to initialize government:', error);
+        console.error('Failed to initialize app:', error);
         setError(error.message);
       } finally {
         setLoading(false);
       }
     };
 
-    
+    initializeApp();
+  }, []); // Empty dependency array ensures this runs only once
 
-    initializeGovernment();
-    seedRegions();
+  const initializeGovernment = async () => {
+    try {
+      // First, try to ping the existing government
+      let response = await fetch('http://localhost:8080/government/ping');
+      if (!response.ok) {
+        // If ping fails, create a new government
+        response = await fetch('http://localhost:8080/government/create', { method: 'POST' });
+      }
 
-  }, []);
+      const data = await response.json();
+      console.log("Received government data:", data);
+      setGovernment(data);
+    } catch (error) {
+      console.error('Failed to initialize government:', error);
+      throw error; // Propagate the error to be handled by the caller
+    }
+  };
+
+  const fetchOrSeedRegions = async () => {
+    try {
+      // First, check if regions already exist
+      const fetchRegionsResponse = await fetch('http://localhost:8080/regions');
+      console.log("Fetch regions response:", fetchRegionsResponse);
+
+      if (!fetchRegionsResponse.ok) {
+        throw new Error(`Failed to fetch regions! Status: ${fetchRegionsResponse.status}`);
+      }
+
+      const fetchedRegions = await fetchRegionsResponse.json();
+      console.log("Fetched regions:", fetchedRegions);
+
+      // If regions exist, just use them
+      if (fetchedRegions && Object.keys(fetchedRegions).length > 0) {
+        console.log("Using existing regions");
+        setRegions(fetchedRegions);
+      } else {
+        // Otherwise, generate new points and seed regions
+        console.log("No regions found, seeding new regions");
+        await seedRegions();
+      }
+    } catch (error) {
+      console.error('Failed to fetch/seed regions:', error);
+      throw error; // Propagate the error
+    }
+  };
+
+  const seedRegions = async () => {
+    // Set up dimensions and number of points
+    const width = 7200;
+    const height = 4200;
+    const numPoints = 50; // Adjust the number of vertices as desired
+
+    // Generate an array of random points: each point is an array [x, y]
+    const points = d3.range(numPoints).map(() => ({
+      x: Math.round(Math.random() * width),
+      y: Math.round(Math.random() * height)
+    }));
+
+    console.log("Generated points for seeding:", points);
+
+    try {
+      // Seed regions with the generated points
+      const response = await fetch('http://localhost:8080/regions/seed', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          locations: points
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to seed regions! Status: ${response.status}`);
+      }
+
+      const seededRegions = await response.json();
+      console.log("Successfully seeded regions:", seededRegions);
+
+      // Handle the response - this depends on your API's response format
+      if (seededRegions.uuids) {
+        // If API returns array of UUIDs, convert to expected format
+        const regionsMap = seededRegions.uuids.reduce((acc, uuid) => {
+          acc[uuid] = { id: uuid, population: 100 };
+          return acc;
+        }, {});
+        setRegions(regionsMap);
+      } else {
+        // Otherwise, assume the API returns the regions in the expected format
+        setRegions(seededRegions);
+      }
+    } catch (error) {
+      console.error('Failed to seed regions:', error);
+      throw error;
+    }
+  };
 
   if (loading) {
     return <div>Loading government data...</div>;
