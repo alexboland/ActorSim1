@@ -101,7 +101,9 @@ object ManagerActor {
           case Some(govt) =>
             val actorRefs = locations.foldLeft(List[ActorRef[RegionActor.Command]]()) { (acc, location) =>
               val region = Region.newRandomRegion(location.x, location.y)
-              val state = RegionActorState(region = region, governmentActor = govt, econActors = Map())
+              val state = RegionActorState(region = region,
+                econAgentIds = Map("government" -> List("government")), 
+                econActors = Map("government" -> govt))
               val actorRef = context.spawn(RegionActor(state), region.id)
               regions += (actorRef.path.name -> actorRef)
               govt ! GovernmentActor.AddRegion(region.id, actorRef)
@@ -117,7 +119,9 @@ object ManagerActor {
         government match {
           case Some(govt) =>
             val region = Region.newRandomRegion(x, y)
-            val state = RegionActorState(region = region, governmentActor = govt, econActors = Map())
+            val state = RegionActorState(region = region,
+              econAgentIds = Map("government" -> List("government")),
+              econActors = Map("government" -> govt))
             val actorRef = context.spawn(RegionActor(state), region.id)
             regions += (actorRef.path.name -> actorRef)
             govt ! GovernmentActor.AddRegion(region.id, actorRef)

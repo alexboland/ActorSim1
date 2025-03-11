@@ -47,7 +47,7 @@ object Bank {
 
 object BankActor {
 
-  type Command = BankingCommand | GameActorCommand
+  type Command = BankingCommand | GameActorCommand | EconAgent.Command
 
   case class InfoResponse(bank: Bank) extends GameInfo.InfoResponse {
     override val agent: Bank = bank

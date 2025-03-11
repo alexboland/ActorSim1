@@ -83,19 +83,19 @@ case class AddOutstandingBond(bond: Bond) extends EconAgent.Command
 
 case class PayBond(bond: Bond, amount: Int, replyTo: ActorRef[Int]) extends EconAgent.Command
 
-case class MakeBid(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
+case class MakeBid(sendTo: EconActor, resourceType: ResourceType, quantity: Int, price: Int)
   extends EconAgent.Command
 
-case class BuyFromSeller(seller: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+case class BuyFromSeller(seller: EconActor, resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
 
-case class SellToBuyer(seller: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+case class SellToBuyer(seller: EconActor, resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
 
-case class ReceiveBid(replyTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int)
+case class ReceiveBid(replyTo: EconActor, bidderId: String,  resourceType: ResourceType, quantity: Int, price: Int)
   extends EconAgent.Command
 
-case class MakeAsk(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+case class MakeAsk(sendTo: EconActor, resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
 
-case class ReceiveAsk(sendTo: ActorRef[EconAgent.Command], resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
+case class ReceiveAsk(sendTo: EconActor, askerId: String, resourceType: ResourceType, quantity: Int, price: Int) extends EconAgent.Command
 
 case class ShowInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]])
   extends GameActorCommand

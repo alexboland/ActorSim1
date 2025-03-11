@@ -11,7 +11,8 @@ import scala.concurrent.duration.DurationInt
 
 case class MarketActorState(
                              market: Market,
-                             regionActor: ActorRef[RegionActor.Command]
+                             regionActor: ActorRef[RegionActor.Command],
+                             econActorIds: Map[String, EconActor]
                            )
 
 case class Market(
@@ -25,18 +26,15 @@ case class Market(
 object Market {
   trait Command
 
-  case class GetHighestBid(resourceType: ResourceType, replyTo: ActorRef[Option[Bid]]) extends Command
-  case class GetLowestAsk(resourceType: ResourceType, replyTo: ActorRef[Option[Ask]]) extends Command
-
   case class Bid(
-                  buyer: ActorRef[EconAgent.Command],
+                  buyerId: String,
                   resourceType: ResourceType,
                   quantity: Int,
                   price: Int
                 )
 
   case class Ask(
-                  seller: ActorRef[EconAgent.Command],
+                  sellerId: String,
                   resourceType: ResourceType,
                   quantity: Int,
                   price: Int
@@ -72,116 +70,130 @@ object MarketActor {
             replyTo ! Some(InfoResponse(state.market))
             Behaviors.same
 
-          case GetHighestBid(resourceType, replyTo) =>
+          case GetBidPrice(replyTo, resourceType) =>
             val highestBid = state.market.bids.get(resourceType).flatMap(_.headOption)
-            replyTo ! highestBid
+            replyTo ! highestBid.map(_.price)
             Behaviors.same
 
-          case GetLowestAsk(resourceType, replyTo) =>
+          case GetAskPrice(replyTo, resourceType) =>
             val lowestAsk = state.market.asks.get(resourceType).flatMap(_.headOption)
-            replyTo ! lowestAsk
+            replyTo ! lowestAsk.map(_.price)
             Behaviors.same
 
-          case ReceiveBid(replyTo, resourceType, quantity, price) =>
-            val newBid = Bid(replyTo, resourceType, quantity, price)
+          case ReceiveBid(replyTo, bidderId, resourceType, quantity, price) =>
+            // Store the bidder's actor reference in econActorIds
+            val updatedEconActorIds = state.econActorIds + (bidderId -> replyTo)
+            val newState = state.copy(econActorIds = updatedEconActorIds)
+
+            val newBid = Bid(bidderId, resourceType, quantity, price)
 
             // Look for matching asks (lowest price first that meets criteria)
-            val matchingAsks = state.market.asks.getOrElse(resourceType, List.empty)
+            val matchingAsks = newState.market.asks.getOrElse(resourceType, List.empty)
               .filter(ask => ask.price <= price)
             // Already sorted by lowest first, as per storage
 
             if (matchingAsks.isEmpty) {
               // Bid is unfulfilled, send out signal to region (founders)
-              state.regionActor ! ReceiveBid(context.self, resourceType, quantity, price)
+              newState.regionActor ! ReceiveBid(context.self, bidderId, resourceType, quantity, price)
               // No matching asks, add bid to queue
-              val currentBids = state.market.bids.getOrElse(resourceType, List.empty)
+              val currentBids = newState.market.bids.getOrElse(resourceType, List.empty)
               // Insert maintaining sort by highest price first
               val updatedBidsList = (newBid :: currentBids).sortBy(-_.price)
-              val updatedBids = state.market.bids + (resourceType -> updatedBidsList)
-              val updatedMarket = state.market.copy(bids = updatedBids)
-              tick(state.copy(market = updatedMarket))
+              val updatedBids = newState.market.bids + (resourceType -> updatedBidsList)
+              val updatedMarket = newState.market.copy(bids = updatedBids)
+              tick(newState.copy(market = updatedMarket))
             } else {
               // Found a matching ask
               val bestAsk = matchingAsks.head
               val tradeQuantity = Math.min(quantity, bestAsk.quantity)
 
+              // Look up seller's ActorRef using sellerId in econActorIds
+              val sellerActor = newState.econActorIds.get(bestAsk.sellerId)
+
               // Send messages to both parties to adjust their funds
-              bestAsk.seller ! ReceiveSalePayment(tradeQuantity * bestAsk.price)
+              sellerActor.foreach(_ ! ReceiveSalePayment(tradeQuantity * bestAsk.price))
               replyTo ! PurchaseResource(resourceType, tradeQuantity, bestAsk.price)
 
               // Update asks list
-              val currentAsks = state.market.asks.getOrElse(resourceType, List.empty)
+              val currentAsks = newState.market.asks.getOrElse(resourceType, List.empty)
               val updatedAsks = if (bestAsk.quantity > tradeQuantity) {
                 // Partial fill, keep ask with reduced quantity (no need to send any message)
                 val updatedAsk = bestAsk.copy(quantity = bestAsk.quantity - tradeQuantity)
                 val newAsksList = (updatedAsk :: currentAsks.filterNot(_ == bestAsk)).sortBy(_.price)
-                state.market.asks + (resourceType -> newAsksList)
+                newState.market.asks + (resourceType -> newAsksList)
               } else {
                 // Full fill, remove ask
                 val newAsksList = currentAsks.filterNot(_ == bestAsk)
-                if (newAsksList.isEmpty) state.market.asks - resourceType
-                else state.market.asks + (resourceType -> newAsksList)
+                if (newAsksList.isEmpty) newState.market.asks - resourceType
+                else newState.market.asks + (resourceType -> newAsksList)
               }
 
-              val updatedMarket = state.market.copy(asks = updatedAsks)
+              val updatedMarket = newState.market.copy(asks = updatedAsks)
 
               // If we didn't fulfill the entire bid, add remainder as a new bid (this way it will look for more asks rather than staying in limbo)
               if (tradeQuantity < quantity) {
                 // Recursively process the remaining quantity by sending a new bid to self
-                context.self ! ReceiveBid(replyTo, resourceType, quantity - tradeQuantity, price)
+                context.self ! ReceiveBid(replyTo, bidderId, resourceType, quantity - tradeQuantity, price)
               }
 
-              tick(state.copy(market = updatedMarket))
+              tick(newState.copy(market = updatedMarket))
             }
 
-          case ReceiveAsk(replyTo, resourceType, quantity, price) =>
-            val newAsk = Ask(replyTo, resourceType, quantity, price)
+          case ReceiveAsk(replyTo, sellerId, resourceType, quantity, price) =>
+            // Store the seller's actor reference in econActorIds
+            val updatedEconActorIds = state.econActorIds + (sellerId -> replyTo)
+            val newState = state.copy(econActorIds = updatedEconActorIds)
+
+            val newAsk = Ask(sellerId, resourceType, quantity, price)
 
             // Look for matching bids (highest price first that meets criteria)
-            val matchingBids = state.market.bids.getOrElse(resourceType, List.empty)
+            val matchingBids = newState.market.bids.getOrElse(resourceType, List.empty)
               .filter(bid => bid.price >= price)
             // Already sorted by highest first, as per storage
 
             if (matchingBids.isEmpty) {
               // No matching bids, add ask to queue
-              val currentAsks = state.market.asks.getOrElse(resourceType, List.empty)
+              val currentAsks = newState.market.asks.getOrElse(resourceType, List.empty)
               // Insert maintaining sort by lowest price first
               val updatedAsksList = (newAsk :: currentAsks).sortBy(_.price)
-              val updatedAsks = state.market.asks + (resourceType -> updatedAsksList)
-              val updatedMarket = state.market.copy(asks = updatedAsks)
-              tick(state.copy(market = updatedMarket))
+              val updatedAsks = newState.market.asks + (resourceType -> updatedAsksList)
+              val updatedMarket = newState.market.copy(asks = updatedAsks)
+              tick(newState.copy(market = updatedMarket))
             } else {
               // Found a matching bid
               val bestBid = matchingBids.head
               val tradeQuantity = Math.min(quantity, bestBid.quantity)
 
+              // Look up buyer's ActorRef using buyerId in econActorIds
+              val buyerActor = newState.econActorIds.get(bestBid.buyerId)
+
               // Notify both parties
-              bestBid.buyer ! PurchaseResource(resourceType, tradeQuantity, price)
+              buyerActor.foreach(_ ! PurchaseResource(resourceType, tradeQuantity, price))
               replyTo ! ReceiveSalePayment(tradeQuantity * price)
 
               // Update bids list
-              val currentBids = state.market.bids.getOrElse(resourceType, List.empty)
+              val currentBids = newState.market.bids.getOrElse(resourceType, List.empty)
               val updatedBids = if (bestBid.quantity > tradeQuantity) {
                 // Partial fill, keep bid with reduced quantity
                 val updatedBid = bestBid.copy(quantity = bestBid.quantity - tradeQuantity)
                 val newBidsList = (updatedBid :: currentBids.filterNot(_ == bestBid)).sortBy(-_.price)
-                state.market.bids + (resourceType -> newBidsList)
+                newState.market.bids + (resourceType -> newBidsList)
               } else {
                 // Full fill, remove bid
                 val newBidsList = currentBids.filterNot(_ == bestBid)
-                if (newBidsList.isEmpty) state.market.bids - resourceType
-                else state.market.bids + (resourceType -> newBidsList)
+                if (newBidsList.isEmpty) newState.market.bids - resourceType
+                else newState.market.bids + (resourceType -> newBidsList)
               }
 
-              val updatedMarket = state.market.copy(bids = updatedBids)
+              val updatedMarket = newState.market.copy(bids = updatedBids)
 
               // If we didn't fulfill the entire ask, add remainder as a new ask or process more bids
               if (tradeQuantity < quantity) {
                 // Recursively process the remaining quantity by sending a new ask to self
-                context.self ! ReceiveAsk(replyTo, resourceType, quantity - tradeQuantity, price)
+                context.self ! ReceiveAsk(replyTo, sellerId, resourceType, quantity - tradeQuantity, price)
               }
 
-              tick(state.copy(market = updatedMarket))
+              tick(newState.copy(market = updatedMarket))
             }
 
           case _ =>

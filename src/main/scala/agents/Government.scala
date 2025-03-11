@@ -90,7 +90,7 @@ object GovernmentActor {
               Behaviors.same
 
             case MakeBid(sendTo, resourceType, quantity, price) =>
-              context.ask(sendTo, ReceiveBid(_, resourceType, quantity, price)) {
+              context.ask(sendTo, ReceiveBid(_, government.id, resourceType, quantity, price)) {
                 case Success(AcceptBid()) =>
                   BuyFromSeller(sendTo, resourceType, quantity, price)
                 case Success(RejectBid(None)) =>

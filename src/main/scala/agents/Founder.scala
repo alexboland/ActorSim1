@@ -69,7 +69,7 @@ object FounderActor {
               replyTo ! Some(InfoResponse(founder))
               Behaviors.same
 
-            case ReceiveBid(replyTo, resourceType, quantity, price) =>
+            case ReceiveBid(replyTo, bidderId, resourceType, quantity, price) =>
               // Bids here are used to goad the founder into investing
               // Need to figure out the best way to map resourceType to type of facility to build
               val newSite = ConstructionSite(

@@ -1,7 +1,6 @@
 package agents
 
 import agents.EconAgent.CounterOffer
-import agents.Market.{Ask, Bid, GetHighestBid, GetLowestAsk}
 import agents.Producer.*
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
@@ -70,7 +69,7 @@ object ProducerActor {
   }
 
   // TODO copy instances of ResourceProducer.Command to Producer.Command as refactor
-  type Command = ResourceProducer.Command | GameActorCommand | Producer.Command
+  type Command = ResourceProducer.Command | GameActorCommand | Producer.Command | EconAgent.Command
 
   implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
@@ -117,9 +116,9 @@ object ProducerActor {
               producer = producer.copy(storedResources = updatedResources)))
 
           case ProcureResource(resourceType, quantity) =>
-            context.ask(state.regionActor, GetLowestAsk(resourceType, _)) {
-              case Success(Some(ask: Ask)) =>
-                MakeBid(state.regionActor, resourceType, quantity, ask.price)
+            context.ask(state.regionActor, GetAskPrice(_, resourceType)) {
+              case Success(Some(price: Int)) =>
+                MakeBid(state.regionActor, resourceType, quantity, price)
               case Success(None) =>
                 //Nothing to be done, next attempt at production will come with another attempt at procurement
                 ActorNoOp()
@@ -129,9 +128,9 @@ object ProducerActor {
             Behaviors.same
 
           case SellResource(resourceType, quantity) =>
-            context.ask(state.regionActor, GetHighestBid(resourceType, _)) {
-              case Success(Some(bid: Bid)) =>
-                val askPrice = Math.max(bid.price, calculateProductionCost(state))
+            context.ask(state.regionActor, GetBidPrice(_, resourceType)) {
+              case Success(Some(price: Int)) =>
+                val askPrice = Math.max(price, calculateProductionCost(state))
                 MakeAsk(state.regionActor, resourceType, quantity, askPrice)
               case Success(None) =>
                 MakeAsk(state.regionActor, resourceType, quantity, calculateProductionCost(state))
@@ -141,12 +140,12 @@ object ProducerActor {
             Behaviors.same
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
-            sendTo ! ReceiveBid(context.self, resourceType, quantity, price)
+            sendTo ! ReceiveBid(context.self, producer.id, resourceType, quantity, price)
             val updatedBidPrices = state.bidPrices + (resourceType -> price)
             tick(state = state.copy(bidPrices = updatedBidPrices))
 
           case MakeAsk(sendTo, resourceType, quantity, price) =>
-            sendTo ! ReceiveAsk(context.self, resourceType, quantity, price)
+            sendTo ! ReceiveAsk(context.self, producer.id, resourceType, quantity, price)
             // Put resource in "escrow"--they'll get it back if the ask is withdrawn from the market
             val updatedResources = storedResources +
               (resourceType -> (storedResources.getOrElse(resourceType, 0) - quantity))
