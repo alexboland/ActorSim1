@@ -147,36 +147,36 @@ object RegionActor {
         message match {
           // For encapsulation, bids/asks from producers will be mediated through region agent into the market
           case ReceiveBid(replyTo, bidderId, resourceType, quantity, price) =>
-            econAgentIds.getOrElse("market", List()).headOption.map { marketId =>
+            econAgentIds.getOrElse("market", List()).headOption.foreach { marketId =>
               if (bidderId != marketId) {
-                econActors.get(marketId).map { marketActor =>
+                econActors.get(marketId).foreach { marketActor =>
                   marketActor ! ReceiveBid(replyTo, bidderId, resourceType, quantity, price)
                 }
               } else {
                 // If the market is "making a bid" it's to forward unmet demand to founders
-                econAgentIds.get("founders").map(_.map { founderId =>
-                  econActors.get(founderId).map { founderActor =>
+                econAgentIds.get("founders").foreach(_.foreach { founderId =>
+                  econActors.get(founderId).foreach { founderActor =>
                     founderActor ! ReceiveBid(replyTo, bidderId, resourceType, quantity, price)
                   }
                 })
               }
-              Behaviors.same
-            }.getOrElse(Behaviors.same)
+            }
+            Behaviors.same
 
           case ReceiveAsk(replyTo, askerId, resourceType, quantity, price) =>
-            econAgentIds.getOrElse("market", List()).headOption.map { marketId =>
+            econAgentIds.getOrElse("market", List()).headOption.foreach { marketId =>
               if (askerId != marketId) {
                 econActors.get(marketId).foreach { marketActor =>
                   marketActor ! ReceiveAsk(replyTo, askerId, resourceType, quantity, price)
                 }
               }
-              Behaviors.same
-            }.getOrElse(Behaviors.same)
+            }
+            Behaviors.same
 
           case GetBidPrice(replyTo, resourceType) =>
             econAgentIds.get("market").flatMap(_.headOption).map { marketId =>
               econActors.get(marketId)
-                .collect { case (actor: ActorRef[MarketActor.Command]) => actor }.map { marketActor =>
+                .collect { case actor: ActorRef[MarketActor.Command] => actor }.map { marketActor =>
                   context.ask(marketActor, GetBidPrice(_, resourceType)) {
                     case Success(bidOpt: Option[Int]) =>
                       replyTo ! bidOpt
@@ -209,22 +209,22 @@ object RegionActor {
             // For now, if the bond is being issued by a (the) bank, forward to government (central bank)
             // Otherwise, forward to the one bank in the region
             // This will almost certainly change in future iterations
-            econAgentIds.get("bank").flatMap(_.headOption).map { bankId =>
+            econAgentIds.get("bank").flatMap(_.headOption).foreach { bankId =>
                 if (bond.debtorId == bankId) {
                   econAgentIds.getOrElse("government", List()).headOption.foreach { id =>
                     econActors.get(id) match {
-                      case govtActor: ActorRef[GovernmentActor.Command] =>
+                      case Some(govtActor: ActorRef[GovernmentActor.Command]) =>
                         govtActor ! ReceiveBond(bond, replyTo, issuedFrom)
                     }
                   }
                 } else {
-                  econActors.get(bankId).match {
-                    case bankActor: ActorRef[BankActor.Command] =>
+                  econActors.get(bankId) match {
+                    case Some(bankActor: ActorRef[BankActor.Command]) =>
                       bankActor ! ReceiveBond(bond, replyTo, issuedFrom)
                   }
                 }
-                Behaviors.same
-            }.getOrElse(Behaviors.same)
+            }
+            Behaviors.same
 
           /*case DiscoverResource(resourceType, quantity) =>
             val newNaturalResources = region.baseProduction.updated(resourceType, region.baseProduction(resourceType) + quantity)
@@ -403,7 +403,7 @@ object RegionActor {
                   //println(s"[DEBUG] Extracted ${result.size} valid producers")
                 } catch {
                   case e: Exception =>
-                    //println(s"[DEBUG] Exception processing producers: ${e.getMessage}")
+                    println(s"[DEBUG] Exception processing producers: ${e.getMessage}")
                     List.empty
                 }
 
@@ -424,7 +424,7 @@ object RegionActor {
                   //println(s"[DEBUG] Extracted ${result.size} valid founders")
                 } catch {
                   case e: Exception =>
-                    //println(s"[DEBUG] Exception processing founders: ${e.getMessage}")
+                    println(s"[DEBUG] Exception processing founders: ${e.getMessage}")
                     List.empty
                 }
 
@@ -446,7 +446,7 @@ object RegionActor {
                   result
                 } catch {
                   case e: Exception =>
-                    //println(s"[DEBUG] Exception processing bank: ${e.getMessage}")
+                    println(s"[DEBUG] Exception processing bank: ${e.getMessage}")
                     None
                 }
 
@@ -460,7 +460,7 @@ object RegionActor {
                         //println(s"[DEBUG] Successfully cast market agent: ${agent.id}")
                         Some(agent)  // Cast to Market
                       case other =>
-                        //println(s"[DEBUG] Failed to cast market agent: ${other.getClass.getName}")
+                        println(s"[DEBUG] Failed to cast market agent: ${other.getClass.getName}")
                         None
                     }
                   })
@@ -468,7 +468,7 @@ object RegionActor {
                   result
                 } catch {
                   case e: Exception =>
-                    //println(s"[DEBUG] Exception processing market: ${e.getMessage}")
+                    println(s"[DEBUG] Exception processing market: ${e.getMessage}")
                     None
                 }
 
@@ -480,16 +480,16 @@ object RegionActor {
                   //println("[DEBUG] Response sent successfully")
                 } catch {
                   case e: Exception =>
-                    //println(s"[DEBUG] Error creating or sending FullInfoResponse: ${e.getMessage}")
-                    //println(s"[DEBUG] Sending simplified response")
+                    println(s"[DEBUG] Error creating or sending FullInfoResponse: ${e.getMessage}")
+                    println(s"[DEBUG] Sending simplified response")
                     replyTo ! Some(FullInfoResponse(region, List.empty, List.empty, None, None))
                 }
 
               case Failure(exception) =>
-                //println(s"[DEBUG] Combined future failed: ${exception.getMessage}")
-                //println(s"[DEBUG] Exception class: ${exception.getClass.getName}")
-                //println(s"[DEBUG] Exception cause: ${if (exception.getCause != null) exception.getCause.getMessage else "none"}")
-                //println(s"[DEBUG] Sending simplified response due to failure")
+                println(s"[DEBUG] Combined future failed: ${exception.getMessage}")
+                println(s"[DEBUG] Exception class: ${exception.getClass.getName}")
+                println(s"[DEBUG] Exception cause: ${if (exception.getCause != null) exception.getCause.getMessage else "none"}")
+                println(s"[DEBUG] Sending simplified response due to failure")
                 replyTo ! Some(FullInfoResponse(region, List.empty, List.empty, None, None))
             }
 
@@ -497,15 +497,7 @@ object RegionActor {
             Behaviors.same
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
-            context.ask(sendTo, ReceiveBid(_, region.id, resourceType, quantity, price)) {
-              case Success(AcceptBid()) =>
-                BuyFromSeller(sendTo, resourceType, quantity, price)
-              case Success(RejectBid(Some(co))) =>
-                MakeBid(sendTo, resourceType, co.qty, co.price)
-              case _ =>
-                ActorNoOp()
-
-            }
+            sendTo ! ReceiveBid(context.self, region.id, resourceType, quantity, price)
             Behaviors.same
 
           case MakeAsk(sendTo, resourceType, quantity, price) =>
@@ -526,7 +518,7 @@ object RegionActor {
 
           case ReceiveWorkerBid(replyTo, agentId, price) =>
             if (region.population - region.assignedWorkers > 0) {
-              econAgentIds.get("market").flatMap(_.headOption).map { marketId =>
+              econAgentIds.get("market").flatMap(_.headOption).foreach { marketId =>
                 econActors.get(marketId) match {
                   case Some(marketActor: ActorRef[MarketActor.Command]) =>
                     context.ask(marketActor, GetAskPrice(_, Food)) {
@@ -541,16 +533,14 @@ object RegionActor {
                       case _ =>
                         ActorNoOp()
                     }
-                    Behaviors.same
                   case _ =>
                     replyTo ! Left(None)
-                    Behaviors.same
                 }
-              }.getOrElse(Behaviors.same)
+              }
             } else {
               replyTo ! Left(None)
-              Behaviors.same
             }
+            Behaviors.same
 
           case ChangeSeason() =>
             tick(state.copy(region = region.copy(season = region.season.next)))

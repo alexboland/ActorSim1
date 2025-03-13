@@ -79,7 +79,8 @@ object RegionRoutes {
             case Success(info: List[RegionActor.InfoResponse]) =>
               val regions = info.map(_.region)
               complete(HttpEntity(ContentTypes.`application/json`, regions.asJson.noSpaces))
-            case _ =>
+            case Failure(exception) =>
+              println(s"=======EXCEPTION: ${exception.toString}=============")
               complete(HttpEntity(ContentTypes.`application/json`, "Regions query failed"))
           }
         }

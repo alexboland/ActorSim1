@@ -70,6 +70,7 @@ object FounderActor {
               Behaviors.same
 
             case ReceiveBid(replyTo, bidderId, resourceType, quantity, price) =>
+              println(s"====FOUNDER ${founder.id} RECEIVED BID OF ${price} FOR ${resourceType.toString}")
               // Bids here are used to goad the founder into investing
               // Need to figure out the best way to map resourceType to type of facility to build
               val newSite = ConstructionSite(
@@ -105,24 +106,32 @@ object FounderActor {
               val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, founder.id)
               context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
                 case Success(Some(offered: Bond)) =>
-                  if (bond == offered) {
-                    founder.site.map { site =>
+                    // TODO add in negotiation, for now just accept counteroffer
+                    founder.site.foreach { site =>
                       context.self ! HireWorkers(site.wage) // Kind of hacky but will work for now: will re-evaluate hiring whenever a bond clears
-                      AddOutstandingBond(bond)
-                    }.getOrElse(ActorNoOp())
-                  } else {
-                    IssueBond(sendTo, offered.principal, offered.interestRate) // Repeat but with their counteroffer
-                  }
+                    }
+                    AddOutstandingBond(bond)
                 case _ =>
                   ActorNoOp()
               }
               Behaviors.same
 
+            case AddOutstandingBond(bond) =>
+              founder.site.map { site =>
+                val updatedResources = site.storedResources + (Money -> (site.storedResources.getOrElse(Money, 0) + bond.principal))
+
+                val newOutstandingBonds = site.outstandingBonds + (bond.id -> bond)
+
+                construction(state = state.copy(
+                  founder = founder.copy(
+                    site = Some(site.copy(storedResources = updatedResources, outstandingBonds = newOutstandingBonds)))))
+              }.getOrElse(Behaviors.same)
+
 
             case HireWorkers(wage) =>
               founder.site.foreach { site =>
                 if (site.workers >= site.maxWorkers) {
-                  ActorNoOp()
+                  // Do nothing
                 } else if (site.storedResources.getOrElse(Money, 0) < site.maxWorkers * site.wage) {
                   // Would prefer to do this with the ask pattern but IssueBond may take multiple tries after which the callback is lost
                   // So instead IssueBond takes care of going back into the loop of hiring workers
@@ -161,6 +170,11 @@ object FounderActor {
                 case _ =>
                   Behaviors.same
               }
+
+            case AddWorker() =>
+              founder.site.map { site =>
+                construction(state.copy(founder = founder.copy(site = Some(site.copy(workers = site.workers+1)))))
+              }.getOrElse(Behaviors.same)
 
             case SetWage(wage) =>
               founder.site.map { site =>

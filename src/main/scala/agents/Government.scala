@@ -9,6 +9,7 @@ import scala.concurrent.duration.DurationInt
 import java.util.UUID
 import scala.util.{Failure, Success}
 
+// TODO delegate regions and econActors maps to separate "state" struct
 case class Government(
                        id: String,
                        storedResources: Map[ResourceType, Int],
@@ -50,6 +51,7 @@ object GovernmentActor {
 
     Behaviors.withTimers { timers =>
       def tick(government: Government): Behavior[Command] = {
+        val storedResources = government.storedResources
 
         Behaviors.receive { (context, message) =>
           message match {
@@ -60,13 +62,13 @@ object GovernmentActor {
               Behaviors.same
 
             case BuyFromSeller(seller, resourceType, qty, price) =>
-              val newStoredResources = government.storedResources + (resourceType -> (government.storedResources.getOrElse(resourceType, 0) + qty))
+              val newStoredResources = storedResources + (resourceType -> (storedResources.getOrElse(resourceType, 0) + qty))
               seller ! SellToBuyer(context.self, resourceType, qty, price)
 
               tick(government.copy(storedResources = newStoredResources))
 
             case SellToBuyer(buyer, resourceType, qty, price)  =>
-              val newStoredResources = government.storedResources + (resourceType -> (government.storedResources.getOrElse (resourceType, 0) - qty) )
+              val newStoredResources = storedResources + (resourceType -> (storedResources.getOrElse (resourceType, 0) - qty) )
 
               tick (government.copy (storedResources = newStoredResources) )
 
@@ -84,23 +86,33 @@ object GovernmentActor {
                   context.self ! MakeBid(regionActor, rt, 10, price) // TODO figure out quantity, for now it'll just calibrate on its own hopefully
                 }
                 government.askPrices.foreach { (rt, price) =>
-                  context.self ! MakeAsk(regionActor, rt, 10, price)
+                  if (storedResources.getOrElse(rt, 0) > 0) {
+                    context.self ! MakeAsk(regionActor, rt, 10, price)
+                  }
                 }
               }
               Behaviors.same
 
-            case MakeBid(sendTo, resourceType, quantity, price) =>
-              context.ask(sendTo, ReceiveBid(_, government.id, resourceType, quantity, price)) {
-                case Success(AcceptBid()) =>
-                  BuyFromSeller(sendTo, resourceType, quantity, price)
-                case Success(RejectBid(None)) =>
-                  ActorNoOp()
-                case Failure(_) =>
-                  ActorNoOp()
-                case _ =>
-                  ActorNoOp()
-              }
-              Behaviors.same
+          case MakeBid(sendTo, resourceType, quantity, price) =>
+            sendTo ! ReceiveBid(context.self, government.id, resourceType, quantity, price)
+            Behaviors.same
+
+          case MakeAsk(sendTo, resourceType, quantity, price) =>
+            sendTo ! ReceiveAsk(context.self, government.id, resourceType, quantity, price)
+            tick(government.copy(
+              storedResources = storedResources +
+                (resourceType -> (storedResources.getOrElse(resourceType, 0) - quantity))))
+
+          case PurchaseResource(resourceType, quantity, price) =>
+            val updatedResources = storedResources +
+              (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
+              (Money -> (storedResources.getOrElse(Money, 0) - (quantity*price)))
+            tick(government.copy(storedResources = updatedResources))
+
+          case ReceiveSalePayment(amount) =>
+            val updatedResources = storedResources +
+              (Money -> (storedResources.getOrElse(Money, 0) + amount))
+            tick(government.copy(storedResources = updatedResources))
 
             case ReceiveBond(bond, replyTo, issuedFrom) =>
               replyTo ! Some(bond.copy(interestRate = government.interestRate)) // TODO consider risks of having ID mess up matching

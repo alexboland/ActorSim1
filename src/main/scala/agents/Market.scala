@@ -64,6 +64,7 @@ object MarketActor {
 
   def apply(state: MarketActorState): Behavior[Command] = Behaviors.setup { context =>
     def tick(state: MarketActorState): Behavior[Command] = {
+      val market = state.market
       Behaviors.receive { (context, message) =>
         message match {
           case ShowInfo(replyTo) =>
@@ -88,19 +89,19 @@ object MarketActor {
             val newBid = Bid(bidderId, resourceType, quantity, price)
 
             // Look for matching asks (lowest price first that meets criteria)
-            val matchingAsks = newState.market.asks.getOrElse(resourceType, List.empty)
+            val matchingAsks = market.asks.getOrElse(resourceType, List.empty)
               .filter(ask => ask.price <= price)
             // Already sorted by lowest first, as per storage
 
             if (matchingAsks.isEmpty) {
               // Bid is unfulfilled, send out signal to region (founders)
-              newState.regionActor ! ReceiveBid(context.self, bidderId, resourceType, quantity, price)
+              newState.regionActor ! ReceiveBid(context.self, market.id, resourceType, quantity, price)
               // No matching asks, add bid to queue
-              val currentBids = newState.market.bids.getOrElse(resourceType, List.empty)
+              val currentBids = market.bids.getOrElse(resourceType, List.empty)
               // Insert maintaining sort by highest price first
               val updatedBidsList = (newBid :: currentBids).sortBy(-_.price)
-              val updatedBids = newState.market.bids + (resourceType -> updatedBidsList)
-              val updatedMarket = newState.market.copy(bids = updatedBids)
+              val updatedBids = market.bids + (resourceType -> updatedBidsList)
+              val updatedMarket = market.copy(bids = updatedBids)
               tick(newState.copy(market = updatedMarket))
             } else {
               // Found a matching ask

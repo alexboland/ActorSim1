@@ -69,6 +69,7 @@ object BankActor {
               // TODO factor in reserve requirements--for now, there are none
               // as of right now, it will simply borrow any money needed to buy the bond from the government (central bank)
               // will deal with more serious constraints later
+              println(s"====BANK ${bank.id} RECEIVING BOND FROM ${bond.debtorId}")
               if (bank.storedMoney < bond.principal) {
                 println(s"===BANK HAS ${bank.storedMoney} BUT PRINCIPAL IS ${bond.principal}, ISSUING BOND===")
                 // borrow money to cover cost
