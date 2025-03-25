@@ -42,9 +42,11 @@ case class SetInterestRate(rate: Double) extends BankingCommand
 
 case class ReceiveDeposit(amount: Int) extends BankingCommand
 
-case class CollectBondPayment(bond: Bond, amount: Int) extends BankingCommand
+case class CollectBondPayment(bondId: String, amount: Int) extends BankingCommand
 
 case class DepositBondPayment(bond: Bond, amount: Int) extends BankingCommand
+
+case class UpdateBondDebtor(bondIds: List[String], newDebtorId: String, newDebtorActor: EconActor) extends BankingCommand
 
 case class ActorNoOp() extends GameActorCommand
 

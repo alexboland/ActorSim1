@@ -291,7 +291,6 @@ object RegionActor {
                   context.ask(marketActor, GetAskPrice(_, Food)) {
                     case Success(Some(price: Int)) =>
                       val qtyToBuy = Math.min(updatedResources.getOrElse(Money, 0) / price, Math.round(region.population * 1.5f) - updatedResources(Food))
-                      // TODO replace the below message with making a bid to the market
                       context.self ! MakeBid(marketActor, Food, qtyToBuy, price)
                       ActorNoOp()
                     case _ =>
@@ -574,10 +573,55 @@ object RegionActor {
 
           case BuildProducer(producer) =>
             val actorRef = context.spawn(ProducerActor(ProducerActorState(producer, Map(), context.self, Map())), producer.id)
+
+            // Get the founder ID from the bonds (if any) for cleanup
+            val founderId = if (producer.outstandingBonds.nonEmpty) {
+              // Just get the debtorId from the first bond (they should all have the same debtorId)
+              producer.outstandingBonds.values.headOption.map(_.debtorId)
+            } else {
+              None
+            }
+
+            // Update the bank's records if there are outstanding bonds
+            if (producer.outstandingBonds.nonEmpty) {
+              econAgentIds.get("bank").flatMap(_.headOption).foreach { bankId =>
+                econActors.get(bankId).foreach {
+                  case bankActor: ActorRef[BankActor.Command] =>
+                    // Notify bank of the new debtor ID for these bonds with explicit actor reference
+                    println(s"====UPDATE BOND DEBTOR TO ${producer.id}")
+                    bankActor ! UpdateBondDebtor(producer.outstandingBonds.keys.toList, producer.id, actorRef)
+                  case _ =>
+                    println("====DOING NOTHING=====")
+                    // Do nothing if not a BankActor
+                }
+              }
+            }
+
+            // Add the new producer
             val updatedProducerIds = producer.id :: econAgentIds.getOrElse("producers", List())
             val updatedAgentIds = econAgentIds + ("producers" -> updatedProducerIds)
             val updatedActors = econActors + (producer.id -> actorRef)
-            tick(state.copy(econAgentIds = updatedAgentIds, econActors = updatedActors))
+
+            // Remove the founder from econAgentIds and econActors if we found a founderId
+            val (finalAgentIds, finalActors) = founderId match {
+              case Some(id) =>
+                // Remove founder from econAgentIds (filter it out of the "founders" list)
+                val cleanedAgentIds = updatedAgentIds.updated(
+                  "founders",
+                  updatedAgentIds.getOrElse("founders", List()).filterNot(_ == id)
+                )
+
+                // Remove founder from econActors
+                val cleanedActors = updatedActors - id
+
+                (cleanedAgentIds, cleanedActors)
+
+              case None =>
+                // No founder to remove
+                (updatedAgentIds, updatedActors)
+            }
+
+            tick(state.copy(econAgentIds = finalAgentIds, econActors = finalActors))
 
           case SpawnFounder() =>
             // Heuristic for limiting amount of founders happening at once

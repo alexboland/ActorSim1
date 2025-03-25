@@ -116,7 +116,7 @@ object GovernmentActor {
 
             case ReceiveBond(bond, replyTo, issuedFrom) =>
               replyTo ! Some(bond.copy(interestRate = government.interestRate)) // TODO consider risks of having ID mess up matching
-              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond, Math.round(bond.principal / 10)), 20.second)
+              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond.id, Math.round(bond.principal / 10)), 20.second)
               tick(government.copy(
                 econActors = government.econActors + (bond.debtorId -> issuedFrom),
                 bonds = government.bonds + (bond.id -> bond)

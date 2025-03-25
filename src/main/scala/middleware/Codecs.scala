@@ -119,11 +119,6 @@ object JsonCodecs {
       "id" -> site.id.asJson,
       "facility" -> site.facility.asJson,
       "percentComplete" -> site.percentComplete.asJson,
-      "workers" -> site.workers.asJson,
-      "maxWorkers" -> site.maxWorkers.asJson,
-      "wage" -> site.wage.asJson,
-      "storedResources" -> site.storedResources.asJson,
-      "outstandingBonds" -> site.outstandingBonds.asJson
     )
   }
 

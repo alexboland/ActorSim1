@@ -62,7 +62,7 @@ object BankActor {
         Behaviors.receive { (context, message) =>
           message match {
             case ShowInfo(replyTo) =>
-              replyTo ! Some(InfoResponse(state.bank))
+              replyTo ! Some(InfoResponse(bank))
               Behaviors.same
 
             case ReceiveBond(bond, replyTo, issuedFrom) =>
@@ -77,7 +77,7 @@ object BankActor {
                 context.self ! IssueBond(state.regionActor, bond.principal, bank.interestRate * 0.9)
               }
               replyTo ! Some(bond.copy(interestRate = bank.interestRate)) // TODO consider risks of having ID mess up matching
-              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond, Math.round(bond.principal/10)), 20.second)
+              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond.id, Math.round(bond.principal/10)), 20.second)
               tick(state.copy(
                 econActors = state.econActors + (bond.debtorId -> issuedFrom),
                 bank = bank.copy(
@@ -102,33 +102,72 @@ object BankActor {
                 storedMoney = (bank.storedMoney + bond.principal),
                 outstandingBonds = newOutstandingBonds)))
 
-            case CollectBondPayment(bond, amount) =>
-              state.econActors.get(bond.debtorId) match {
-                case Some(actorRef) =>
-                  context.ask(actorRef, PayBond(bond, amount, _)) {
-                    case Success(payment: Int) =>
-                      DepositBondPayment(bond, payment)
-                    case Failure(err) =>
-                      println(s"failure in command CollectBondPayment in bank ${state.bank.id}: ${err}")
-                      ActorNoOp()
-                    case _ =>
-                      ActorNoOp()
+            case CollectBondPayment(bondId, amount) =>
+              // Look up the current version of the bond from bondsOwned
+              bank.bondsOwned.get(bondId) match {
+                case Some(currentBond) =>
+                  state.econActors.get(currentBond.debtorId) match {
+                    case Some(actorRef) =>
+                      context.ask(actorRef, PayBond(currentBond, amount, _)) {
+                        case Success(payment: Int) =>
+                          DepositBondPayment(currentBond, payment)
+                        case Failure(err) =>
+                          ActorNoOp()
+                        case _ =>
+                          ActorNoOp()
+                      }
+                    case None =>
+                      println(s"====COULDN'T FIND ACTOR REF FOR DEBTOR ${currentBond.debtorId}====")
                   }
-                case _ =>
-                  println(s"couldn't find actor ref for debtor ${bond.debtorId}")
+                case None =>
+                  println(s"====BOND $bondId NO LONGER EXISTS IN BONDSOWNED====")
+                  timers.cancel(s"collect-$bondId")
               }
               Behaviors.same
 
             case DepositBondPayment(bond, amount) =>
-              val newStoredMoney = state.bank.storedMoney + amount
+              val newStoredMoney = bank.storedMoney + amount
               val updatedBond = bond.copy(totalOutstanding = ((bond.totalOutstanding - amount)*bond.interestRate).toInt)
-              val updatedBonds = if (bond.totalOutstanding <= 0) {
+              val updatedBonds = if (updatedBond.totalOutstanding <= 0) {
                 timers.cancel(s"collect-${bond.id}")
-                state.bank.bondsOwned - bond.id
+                bank.bondsOwned - bond.id
               } else {
-                state.bank.bondsOwned + (bond.id -> updatedBond)
+                bank.bondsOwned + (bond.id -> updatedBond)
               }
-              tick(state = state.copy(bank = state.bank.copy(storedMoney = newStoredMoney, bondsOwned = updatedBonds)))
+              tick(state = state.copy(bank = bank.copy(storedMoney = newStoredMoney, bondsOwned = updatedBonds)))
+
+            case UpdateBondDebtor(bondIds, newDebtorId, newDebtorActor) =>
+              // First, update the bonds with the new debtor ID
+              val updatedBondsOwned = bondIds.foldLeft(bank.bondsOwned) { (bonds, bondId) =>
+                bonds.get(bondId) match {
+                  case Some(bond) =>
+                    // Update the bond's debtor ID
+                    bonds + (bondId -> bond.copy(debtorId = newDebtorId))
+                  case None =>
+                    bonds
+                }
+              }
+
+              println("=================")
+              println(s"original bonds owned: ${bank.bondsOwned}")
+              println(s"updated bonds owned ${updatedBondsOwned}")
+              println("=================")
+
+              // Update the econActors mapping to point to the new debtor
+              val updatedEconActors = bondIds.foldLeft(state.econActors) { (actors, bondId) =>
+                bank.bondsOwned.get(bondId) match {
+                  case Some(bond) if actors.contains(bond.debtorId) =>
+                    // Remove old mapping and add new one with the explicit actor reference
+                    actors - bond.debtorId + (newDebtorId -> newDebtorActor)
+                  case _ => actors
+                }
+              }
+
+              tick(state.copy(
+                bank = bank.copy(bondsOwned = updatedBondsOwned),
+                econActors = updatedEconActors
+              ))
+
             case _ =>
               Behaviors.same
           }

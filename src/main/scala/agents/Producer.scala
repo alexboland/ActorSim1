@@ -50,7 +50,9 @@ object Producer {
 
   trait Command
 
-  case class HireWorkers() extends Command
+  case class HireWorkers(wage: Int) extends Command
+
+  case class SetWage(wage: Int) extends Command
 
   case class ProcureResource(resourceType: ResourceType, qty: Int) extends Command
 
@@ -80,10 +82,16 @@ object ProducerActor {
       val storedResources = producer.storedResources
       Behaviors.receive { (context, message) =>
         message match {
+
           case PayWages() =>
-            val workersToPay = Math.min(Math.floorDiv(storedResources.getOrElse(Money, 0), producer.wage), producer.workers)
+            val workersToPay = Math.min(Math.max(Math.floorDiv(storedResources.getOrElse(Money, 0), producer.wage), 0), producer.workers)
+            if (workersToPay < producer.maxWorkers) {
+              context.self ! IssueBond(state.regionActor, producer.maxWorkers * producer.wage, 0.01)
+            }
             val updatedResources = storedResources +
               (Money -> (storedResources.getOrElse(Money, 0) - (workersToPay * producer.wage)))
+
+            // TODO need to send a message to the region to release the workers
             tick(state.copy(producer = producer.copy(
               workers = workersToPay, storedResources = updatedResources)))
 
@@ -110,7 +118,10 @@ object ProducerActor {
               case (acc, (r, qty)) =>
                 val newQty = storedResources.getOrElse(r, 0) - (producer.inputs.getOrElse(r, 0) * totalProduction)
                 storedResources + (r -> newQty)
-            } + (resourceProduced -> (storedResources(resourceProduced) + totalProduction))
+            } + (resourceProduced -> (storedResources.getOrElse(resourceProduced, 0) + totalProduction))
+
+            // For now, have it sell the resources at this point, the message will go to a queue
+            context.self ! SellResource(producer.resourceProduced, totalProduction)
 
             tick(state.copy(
               producer = producer.copy(storedResources = updatedResources)))
@@ -169,7 +180,7 @@ object ProducerActor {
             seller ! SellToBuyer(context.self, resourceType, quantity, price)
             val updatedResources = storedResources +
               (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
-              (Money -> (storedResources(Money) - Math.multiplyExact(quantity, price)))
+              (Money -> (storedResources.getOrElse(Money, 0) - Math.multiplyExact(quantity, price)))
             tick(state.copy(
               producer = producer.copy(storedResources = updatedResources)))
 
@@ -177,7 +188,7 @@ object ProducerActor {
           case SellToBuyer(buyer, resourceType, quantity, price) =>
             val updatedResources = storedResources +
               (resourceType-> (storedResources.getOrElse(resourceType, 0) - quantity)) +
-              (Money -> (storedResources(Money) + Math.multiplyExact(quantity, price)))
+              (Money -> (storedResources.getOrElse(Money, 0) + Math.multiplyExact(quantity, price)))
             tick(state.copy(
               producer = producer.copy(storedResources = updatedResources)))
 
@@ -185,11 +196,31 @@ object ProducerActor {
             replyTo ! Some(InfoResponse(producer))
             Behaviors.same
 
-          case HireWorkers() =>
-            if (producer.workers < producer.maxWorkers) {
-              context.self ! MakeWorkerBid(state.regionActor, producer.wage)
+          case HireWorkers(wage) =>
+            if (producer.workers >= producer.maxWorkers) {
+              // Do nothing
+              Behaviors.same
+            } else if (producer.storedResources.getOrElse(Money, 0) < producer.maxWorkers * producer.wage) {
+              // Would prefer to do this with the ask pattern but IssueBond may take multiple tries after which the callback is lost
+              // So instead IssueBond takes care of going back into the loop of hiring workers
+              context.self ! IssueBond(state.regionActor, producer.maxWorkers * producer.wage, 0.01)
+              Behaviors.same
+            } else {
+              context.ask(state.regionActor, RegionActor.ReceiveWorkerBid(_, state.producer.id, producer.wage)) {
+                case Success(Right(())) =>
+                  AddWorker()
+                case Success(Left(Some(co: Int))) =>
+                  context.self ! SetWage(co)
+                  context.self ! HireWorkers(co)
+                  ActorNoOp()
+                case _ =>
+                  ActorNoOp()
+              }
+              Behaviors.same
             }
-            Behaviors.same
+
+          case SetWage(wage) =>
+            tick(state = state.copy(producer = producer.copy(wage = wage)))
 
           case MakeWorkerBid(sendTo, wage) =>
             context.ask(sendTo, RegionActor.ReceiveWorkerBid(_, state.producer.id, wage)) {
@@ -208,7 +239,8 @@ object ProducerActor {
             val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, producer.id)
               context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
                 case Success(Some(offered: Bond)) =>
-                    AddOutstandingBond(bond) //for now just accept whatever the bond is
+                    context.self ! HireWorkers(producer.wage)
+                    AddOutstandingBond(offered) //for now just accept whatever the bond is
                 case _ =>
                   ActorNoOp()
               }

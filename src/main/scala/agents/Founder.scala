@@ -12,9 +12,9 @@ import scala.concurrent.duration.DurationInt
 import scala.util.Success
 
 case class FounderActorState(
-                           founder: Founder,
-                           regionActor: ActorRef[RegionActor.Command]
-                         )
+                              founder: Founder,
+                              regionActor: ActorRef[RegionActor.Command]
+                            )
 
 case class Founder(
                     id: String,
@@ -23,15 +23,10 @@ case class Founder(
                   ) extends EconAgent
 
 case class ConstructionSite(
-                       id: String,
-                       facility: Producer,
-                       percentComplete: Int,
-                       workers: Int,
-                       maxWorkers: Int,
-                       wage: Int,
-                       storedResources: Map[ResourceType, Int], // for now just need money but keeping it flexible
-                       outstandingBonds: Map[String, Bond]
-                       )
+                             id: String,
+                             facility: Producer,
+                             percentComplete: Int
+                           )
 
 object Founder {
   trait Command
@@ -72,16 +67,19 @@ object FounderActor {
             case ReceiveBid(replyTo, bidderId, resourceType, quantity, price) =>
               println(s"====FOUNDER ${founder.id} RECEIVED BID OF ${price} FOR ${resourceType.toString}")
               // Bids here are used to goad the founder into investing
-              // Need to figure out the best way to map resourceType to type of facility to build
+              // Initialize Producer with all necessary fields
+              val facility = Producer.newProducer(founder.regionId, 1, resourceType)
+                .copy(
+                  maxWorkers = 10,
+                  wage = 1,
+                  storedResources = Map(),
+                  outstandingBonds = Map()
+                )
+
               val newSite = ConstructionSite(
                 id = UUID.randomUUID.toString,
-                facility = Producer.newProducer(founder.regionId, 1, resourceType),
-                percentComplete = 0,
-                workers = 0,
-                maxWorkers = 10,
-                wage = 1, // For now will just keep incrementing, but consider some kind of pinging to get this information
-                storedResources = Map(),
-                outstandingBonds = Map(),
+                facility = facility,
+                percentComplete = 0
               )
 
               timers.startTimerWithFixedDelay("construction", ProgressConstruction(), 2.second)
@@ -96,120 +94,157 @@ object FounderActor {
       def construction(state: FounderActorState): Behavior[Command] = {
         Behaviors.receive { (context, message) =>
           val founder = state.founder
-          // TODO refactor by having the site option matched for in a way that wraps around the message match
-          message match {
-            case ShowInfo(replyTo) =>
-              replyTo ! Some(InfoResponse(founder))
-              Behaviors.same
 
-            case IssueBond(sendTo, principal, interest) =>
-              val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, founder.id)
-              context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
-                case Success(Some(offered: Bond)) =>
-                    // TODO add in negotiation, for now just accept counteroffer
-                    founder.site.foreach { site =>
-                      context.self ! HireWorkers(site.wage) // Kind of hacky but will work for now: will re-evaluate hiring whenever a bond clears
-                    }
-                    AddOutstandingBond(bond)
-                case _ =>
-                  ActorNoOp()
-              }
-              Behaviors.same
+          // Extract site once at the beginning
+          founder.site match {
+            case Some(site) =>
+              // Work with site and facility directly
+              val facility = site.facility
 
-            case AddOutstandingBond(bond) =>
-              founder.site.map { site =>
-                val updatedResources = site.storedResources + (Money -> (site.storedResources.getOrElse(Money, 0) + bond.principal))
+              message match {
+                case ShowInfo(replyTo) =>
+                  replyTo ! Some(InfoResponse(founder))
+                  Behaviors.same
 
-                val newOutstandingBonds = site.outstandingBonds + (bond.id -> bond)
-
-                construction(state = state.copy(
-                  founder = founder.copy(
-                    site = Some(site.copy(storedResources = updatedResources, outstandingBonds = newOutstandingBonds)))))
-              }.getOrElse(Behaviors.same)
-
-
-            case HireWorkers(wage) =>
-              founder.site.foreach { site =>
-                if (site.workers >= site.maxWorkers) {
-                  // Do nothing
-                } else if (site.storedResources.getOrElse(Money, 0) < site.maxWorkers * site.wage) {
-                  // Would prefer to do this with the ask pattern but IssueBond may take multiple tries after which the callback is lost
-                  // So instead IssueBond takes care of going back into the loop of hiring workers
-                  context.self ! IssueBond(state.regionActor, site.maxWorkers * site.wage, 0.01)
-                } else {
-                  context.ask(state.regionActor, RegionActor.ReceiveWorkerBid(_, state.founder.id, site.wage)) {
-                    case Success(Right(())) =>
-                      AddWorker()
-                    case Success(Left(Some(co: Int))) =>
-                      context.self ! SetWage(co)
-                      context.self ! HireWorkers(co)
-                      ActorNoOp()
+                case IssueBond(sendTo, principal, interest) =>
+                  val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, founder.id)
+                  context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
+                    case Success(Some(offered: Bond)) =>
+                      // TODO add in negotiation, for now just accept counteroffer
+                      context.self ! HireWorkers(facility.wage)
+                      AddOutstandingBond(offered)
                     case _ =>
                       ActorNoOp()
                   }
-                }
-              }
-              Behaviors.same
+                  Behaviors.same
 
-            case ProgressConstruction() =>
-              founder.site match {
-                case Some(site) =>
+                case AddOutstandingBond(bond) =>
+                  val updatedResources = facility.storedResources +
+                    (Money -> (facility.storedResources.getOrElse(Money, 0) + bond.principal))
+
+                  val newOutstandingBonds = facility.outstandingBonds + (bond.id -> bond)
+
+                  val updatedFacility = facility.copy(
+                    storedResources = updatedResources,
+                    outstandingBonds = newOutstandingBonds
+                  )
+
+                  construction(state.copy(
+                    founder = founder.copy(
+                      site = Some(site.copy(facility = updatedFacility)))))
+
+                case PayBond(bond, amount, replyTo) =>
+                  val amountToPay = Math.min(facility.storedResources.getOrElse(Money, 0), amount)
+                  println(s"===FOUNDER ${founder.id} MAKING BOND PAYMENT OF ${amountToPay} FROM RESERVES OF ${facility.storedResources.getOrElse(Money, 0)}===")
+
+                  val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay) * bond.interestRate).toInt)
+                  val newOutstandingBonds = if (updatedBond.totalOutstanding <= 0) {
+                    facility.outstandingBonds - bond.id
+                  } else {
+                    facility.outstandingBonds + (bond.id -> updatedBond)
+                  }
+
+                  val updatedResources = facility.storedResources +
+                    (Money -> (facility.storedResources.getOrElse(Money, 0) - amountToPay))
+
+                  val updatedFacility = facility.copy(
+                    storedResources = updatedResources,
+                    outstandingBonds = newOutstandingBonds
+                  )
+
+                  replyTo ! amountToPay
+                  construction(state.copy(
+                    founder = founder.copy(
+                      site = Some(site.copy(facility = updatedFacility)))))
+
+                case HireWorkers(wage) =>
+                  if (facility.workers >= facility.maxWorkers) {
+                    // Do nothing
+                    Behaviors.same
+                  } else if (facility.storedResources.getOrElse(Money, 0) < facility.maxWorkers * facility.wage) {
+                    // Would prefer to do this with the ask pattern but IssueBond may take multiple tries after which the callback is lost
+                    // So instead IssueBond takes care of going back into the loop of hiring workers
+                    context.self ! IssueBond(state.regionActor, facility.maxWorkers * facility.wage, 0.01)
+                    Behaviors.same
+                  } else {
+                    context.ask(state.regionActor, RegionActor.ReceiveWorkerBid(_, state.founder.id, facility.wage)) {
+                      case Success(Right(())) =>
+                        AddWorker()
+                      case Success(Left(Some(co: Int))) =>
+                        context.self ! SetWage(co)
+                        context.self ! HireWorkers(co)
+                        ActorNoOp()
+                      case _ =>
+                        ActorNoOp()
+                    }
+                    Behaviors.same
+                  }
+
+                case ProgressConstruction() =>
                   context.self ! PayWages()
 
                   val percentComplete = site.percentComplete
-                  val newProgress = Math.min(percentComplete + site.workers, 100)
+                  val newProgress = Math.min(percentComplete + facility.workers, 100)
 
-                  if (site.workers < site.maxWorkers) {
-                    context.self ! HireWorkers(site.wage)
+                  if (facility.workers < facility.maxWorkers) {
+                    context.self ! HireWorkers(facility.wage)
                   }
 
                   if (newProgress >= 100) {
                     context.self ! CompleteConstruction()
                   }
-                  construction(state.copy(founder = founder.copy(site = Some(site.copy(percentComplete = newProgress)))))
+                  construction(state.copy(founder = founder.copy(
+                    site = Some(site.copy(percentComplete = newProgress)))))
+
+                case AddWorker() =>
+                  val updatedFacility = facility.copy(workers = facility.workers + 1)
+                  construction(state.copy(founder = founder.copy(
+                    site = Some(site.copy(facility = updatedFacility)))))
+
+                case SetWage(wage) =>
+                  val updatedFacility = facility.copy(wage = wage)
+                  construction(state.copy(founder = founder.copy(
+                    site = Some(site.copy(facility = updatedFacility)))))
+
+                case PayWages() =>
+                  val workersToPay = Math.min(Math.floorDiv(facility.storedResources.getOrElse(Money, 0), facility.wage), facility.workers)
+                  if (workersToPay < facility.workers) {
+                    state.regionActor ! UnassignWorkers(facility.workers - workersToPay)
+                  }
+                  val updatedResources = facility.storedResources +
+                    (Money -> (facility.storedResources.getOrElse(Money, 0) - (workersToPay * facility.wage)))
+
+                  val updatedFacility = facility.copy(
+                    workers = workersToPay,
+                    storedResources = updatedResources
+                  )
+
+                  construction(state.copy(founder = founder.copy(
+                    site = Some(site.copy(facility = updatedFacility)))))
+
+                case CompleteConstruction() =>
+                  // The facility already has all the necessary fields
+                  state.regionActor ! BuildProducer(facility)
+                  Behaviors.stopped
+
                 case _ =>
                   Behaviors.same
               }
 
-            case AddWorker() =>
-              founder.site.map { site =>
-                construction(state.copy(founder = founder.copy(site = Some(site.copy(workers = site.workers+1)))))
-              }.getOrElse(Behaviors.same)
-
-            case SetWage(wage) =>
-              founder.site.map { site =>
-                construction(state.copy(founder = founder.copy(site = Some(site.copy(wage = wage)))))
-              }.getOrElse(Behaviors.same)
-
-            case PayWages() =>
-              founder.site.map { site =>
-                val workersToPay = Math.min(Math.floorDiv(site.storedResources.getOrElse(Money, 0), site.wage), site.workers)
-                if (workersToPay < site.workers) {
-                  state.regionActor ! UnassignWorkers(site.workers - workersToPay)
-                }
-                val updatedResources = site.storedResources +
-                  (Money -> (site.storedResources.getOrElse(Money, 0) - (workersToPay * site.wage)))
-                construction(state.copy(founder = founder.copy(site =
-                  Some(site.copy(workers = workersToPay, storedResources = updatedResources)))))
-              }.getOrElse(Behaviors.same)
-
-
-            case CompleteConstruction() =>
-              founder.site match {
-                case Some(site) =>
-                  state.regionActor ! BuildProducer(site.facility)
+            case None =>
+              // Handle the case where there's no site
+              message match {
+                case ShowInfo(replyTo) =>
+                  replyTo ! Some(InfoResponse(founder))
+                  Behaviors.same
                 case _ =>
-                // This definitely shouldn't happen
+                  Behaviors.same
               }
-              Behaviors.stopped
-
-            case _ =>
-              Behaviors.same
           }
         }
       }
-      preConstruction(state)
 
+      preConstruction(state)
     }
   }
 }
