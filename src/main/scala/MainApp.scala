@@ -62,6 +62,7 @@ object MainApp {
         concat(
           GovernmentRoutes.routes,
           RegionRoutes.routes,
+          HistoryRoutes.routes,
           extractRequest { req =>
             println(s"Request did not match any route: ${req.method.value} ${req.uri}")
             complete(StatusCodes.NotFound -> "Route not found")

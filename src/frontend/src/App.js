@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import GovernmentUI from './GovernmentUI';
+import HistoryExplorer from './HistoryExplorer';
 import * as d3 from "d3"; // Imports all d3 modules
 
 const App = () => {
@@ -7,6 +8,7 @@ const App = () => {
   const [regions, setRegions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   useEffect(() => {
     // Combined function to initialize government and fetch/seed regions
@@ -79,7 +81,7 @@ const App = () => {
     // Set up dimensions and number of points
     const width = 7200;
     const height = 4200;
-    const numPoints = 50; // Adjust the number of vertices as desired
+    const numPoints = 1; // Adjust the number of vertices as desired
 
     // Generate an array of random points: each point is an array [x, y]
     const points = d3.range(numPoints).map(() => ({
@@ -126,6 +128,14 @@ const App = () => {
     }
   };
 
+  const openHistoryModal = () => {
+    setIsHistoryModalOpen(true);
+  };
+
+  const closeHistoryModal = () => {
+    setIsHistoryModalOpen(false);
+  };
+
   if (loading) {
     return <div>Loading government data...</div>;
   }
@@ -136,12 +146,39 @@ const App = () => {
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-      <h1>Region Simulator</h1>
+      <header style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '20px'
+      }}>
+        <h1>Region Simulator</h1>
+        <button
+          onClick={openHistoryModal}
+          style={{
+            padding: '10px 15px',
+            backgroundColor: '#2196F3',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '16px'
+          }}
+        >
+          History Explorer
+        </button>
+      </header>
+
       {government ? (
         <GovernmentUI initialGovernment={government} initialRegions={regions} />
       ) : (
         <div>No government data available.</div>
       )}
+
+      <HistoryExplorer
+        isOpen={isHistoryModalOpen}
+        onClose={closeHistoryModal}
+      />
     </div>
   );
 };

@@ -3,19 +3,19 @@ package agents
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout
-import middleware.GameInfo
+import middleware.{EventType, GameEvent, GameEventService, GameInfo}
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
 
 case class Bond(
-               id: String,
-               principal: Int,
-               interestRate: Double,
-               totalOutstanding: Int,
-               debtorId: String
-)
+                 id: String,
+                 principal: Int,
+                 interestRate: Double,
+                 totalOutstanding: Int,
+                 debtorId: String
+               )
 
 case class BankActorState(
                            bank: Bank,
@@ -24,12 +24,12 @@ case class BankActorState(
                          )
 
 case class Bank(
-               id: String,
-               regionId: String,
-               storedMoney: Int,
-               interestRate: Double,
-               bondsOwned: Map[String, Bond],
-               outstandingBonds: Map[String, Bond]
+                 id: String,
+                 regionId: String,
+                 storedMoney: Int,
+                 interestRate: Double,
+                 bondsOwned: Map[String, Bond],
+                 outstandingBonds: Map[String, Bond]
                ) extends EconAgent
 
 object Bank {
@@ -56,9 +56,23 @@ object BankActor {
   implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
   def apply(state: BankActorState): Behavior[Command] = Behaviors.setup { context =>
+    // Create event service
+    val eventService = GameEventService(context)
+
     Behaviors.withTimers { timers =>
       def tick(state: BankActorState): Behavior[Command] = {
         val bank = state.bank
+
+        // Helper function for logging events
+        def logBankEvent(eventType: EventType, eventText: String): Unit = {
+          eventService.logEvent(
+            agentId = bank.id,
+            regionId = bank.regionId,
+            eventType = eventType,
+            eventText = eventText
+          )
+        }
+
         Behaviors.receive { (context, message) =>
           message match {
             case ShowInfo(replyTo) =>
@@ -69,9 +83,16 @@ object BankActor {
               // TODO factor in reserve requirements--for now, there are none
               // as of right now, it will simply borrow any money needed to buy the bond from the government (central bank)
               // will deal with more serious constraints later
-              println(s"====BANK ${bank.id} RECEIVING BOND FROM ${bond.debtorId}")
+              logBankEvent(
+                EventType.Custom("BondReceived"),
+                s"Received bond ${bond.id} from ${bond.debtorId} with principal ${bond.principal}"
+              )
+
               if (bank.storedMoney < bond.principal) {
-                println(s"===BANK HAS ${bank.storedMoney} BUT PRINCIPAL IS ${bond.principal}, ISSUING BOND===")
+                logBankEvent(
+                  EventType.Custom("IssuingBond"),
+                  s"Insufficient funds (${bank.storedMoney}) to cover bond principal (${bond.principal}). Issuing new bond."
+                )
                 // borrow money to cover cost
                 // TODO additional money will come from deposits by region/producers, but for now this will suffice
                 context.self ! IssueBond(state.regionActor, bond.principal, bank.interestRate * 0.9)
@@ -87,6 +108,11 @@ object BankActor {
 
             case IssueBond(sendTo, principal, interest) =>
               val bond = Bond(UUID.randomUUID().toString, principal, interest, principal, bank.id)
+              logBankEvent(
+                EventType.BondIssued,
+                s"Issued bond ${bond.id} with principal $principal at ${interest * 100}% interest"
+              )
+
               context.ask(sendTo, ReceiveBond(bond, _, context.self)) {
                 case Success(Some(offered: Bond)) =>
                   AddOutstandingBond(offered) // for now, just acccept whatever the counteroffer is
@@ -97,7 +123,11 @@ object BankActor {
 
             case AddOutstandingBond(bond) =>
               val newOutstandingBonds = bank.outstandingBonds + (bond.id -> bond)
-              println(s"===BANK RECEIVING ${bond.principal}, FUNDS NOW GOING FROM ${bank.storedMoney} to ${bank.storedMoney + bond.principal}===")
+              logBankEvent(
+                EventType.Custom("BondFunded"),
+                s"Bond ${bond.id} funded with ${bond.principal}. Bank funds increased from ${bank.storedMoney} to ${bank.storedMoney + bond.principal}"
+              )
+
               tick(state = state.copy(bank = bank.copy(
                 storedMoney = (bank.storedMoney + bond.principal),
                 outstandingBonds = newOutstandingBonds)))
@@ -106,21 +136,36 @@ object BankActor {
               // Look up the current version of the bond from bondsOwned
               bank.bondsOwned.get(bondId) match {
                 case Some(currentBond) =>
+                  logBankEvent(
+                    EventType.Custom("CollectingPayment"),
+                    s"Collecting payment of $amount on bond ${currentBond.id} from ${currentBond.debtorId}"
+                  )
+
                   state.econActors.get(currentBond.debtorId) match {
                     case Some(actorRef) =>
                       context.ask(actorRef, PayBond(currentBond, amount, _)) {
                         case Success(payment: Int) =>
                           DepositBondPayment(currentBond, payment)
                         case Failure(err) =>
+                          logBankEvent(
+                            EventType.Custom("PaymentFailed"),
+                            s"Failed to collect payment on bond ${currentBond.id}: ${err.getMessage}"
+                          )
                           ActorNoOp()
                         case _ =>
                           ActorNoOp()
                       }
                     case None =>
-                      println(s"====COULDN'T FIND ACTOR REF FOR DEBTOR ${currentBond.debtorId}====")
+                      logBankEvent(
+                        EventType.Custom("DebtorNotFound"),
+                        s"Could not find actor reference for debtor ${currentBond.debtorId}"
+                      )
                   }
                 case None =>
-                  println(s"====BOND $bondId NO LONGER EXISTS IN BONDSOWNED====")
+                  logBankEvent(
+                    EventType.Custom("BondNotFound"),
+                    s"Bond $bondId no longer exists in bonds owned"
+                  )
                   timers.cancel(s"collect-$bondId")
               }
               Behaviors.same
@@ -128,8 +173,21 @@ object BankActor {
             case DepositBondPayment(bond, amount) =>
               val newStoredMoney = bank.storedMoney + amount
               val updatedBond = bond.copy(totalOutstanding = ((bond.totalOutstanding - amount)*bond.interestRate).toInt)
-              val updatedBonds = if (updatedBond.totalOutstanding <= 0) {
+
+              if (updatedBond.totalOutstanding <= 0) {
+                logBankEvent(
+                  EventType.BondRepaid,
+                  s"Bond ${bond.id} fully repaid by ${bond.debtorId}. Final payment: $amount"
+                )
                 timers.cancel(s"collect-${bond.id}")
+              } else {
+                logBankEvent(
+                  EventType.Custom("PaymentReceived"),
+                  s"Received payment of $amount on bond ${bond.id}. Remaining balance: ${updatedBond.totalOutstanding}"
+                )
+              }
+
+              val updatedBonds = if (updatedBond.totalOutstanding <= 0) {
                 bank.bondsOwned - bond.id
               } else {
                 bank.bondsOwned + (bond.id -> updatedBond)
@@ -142,16 +200,15 @@ object BankActor {
                 bonds.get(bondId) match {
                   case Some(bond) =>
                     // Update the bond's debtor ID
+                    logBankEvent(
+                      EventType.Custom("DebtorUpdated"),
+                      s"Updated debtor for bond $bondId from ${bond.debtorId} to $newDebtorId"
+                    )
                     bonds + (bondId -> bond.copy(debtorId = newDebtorId))
                   case None =>
                     bonds
                 }
               }
-
-              println("=================")
-              println(s"original bonds owned: ${bank.bondsOwned}")
-              println(s"updated bonds owned ${updatedBondsOwned}")
-              println("=================")
 
               // Update the econActors mapping to point to the new debtor
               val updatedEconActors = bondIds.foldLeft(state.econActors) { (actors, bondId) =>
@@ -173,7 +230,6 @@ object BankActor {
           }
         }
       }
-
 
       // TODO create loop for adjusting outstanding loans and possibly modifying its interest rates based on some kind of information
       // timers.startTimerWithFixedDelay("production", ProduceResource(), 8.second)

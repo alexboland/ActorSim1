@@ -4,7 +4,7 @@ import agents.EconAgent.CounterOffer
 import agents.Market.*
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
-import middleware.GameInfo
+import middleware.{EventType, GameEvent, GameEventService, GameInfo}
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
@@ -63,8 +63,22 @@ object MarketActor {
   type Command = Market.Command | GameActorCommand | EconAgent.Command
 
   def apply(state: MarketActorState): Behavior[Command] = Behaviors.setup { context =>
+    // Create event service
+    val eventService = GameEventService(context)
+
     def tick(state: MarketActorState): Behavior[Command] = {
       val market = state.market
+
+      // Helper function for logging events
+      def logMarketEvent(eventType: EventType, eventText: String): Unit = {
+        eventService.logEvent(
+          agentId = market.id,
+          regionId = market.regionId,
+          eventType = eventType,
+          eventText = eventText
+        )
+      }
+
       Behaviors.receive { (context, message) =>
         message match {
           case ShowInfo(replyTo) =>
@@ -87,6 +101,10 @@ object MarketActor {
             val newState = state.copy(econActorIds = updatedEconActorIds)
 
             val newBid = Bid(bidderId, resourceType, quantity, price)
+            logMarketEvent(
+              EventType.Custom("BidReceived"),
+              s"Bid received from $bidderId for $quantity $resourceType at price $price"
+            )
 
             // Look for matching asks (lowest price first that meets criteria)
             val matchingAsks = market.asks.getOrElse(resourceType, List.empty)
@@ -114,6 +132,12 @@ object MarketActor {
               // Send messages to both parties to adjust their funds
               sellerActor.foreach(_ ! ReceiveSalePayment(tradeQuantity * bestAsk.price))
               replyTo ! PurchaseResource(resourceType, tradeQuantity, bestAsk.price)
+
+              // Log transaction
+              logMarketEvent(
+                EventType.MarketTransaction,
+                s"Transaction: $tradeQuantity $resourceType sold by ${bestAsk.sellerId} to $bidderId at price ${bestAsk.price}"
+              )
 
               // Update asks list
               val currentAsks = newState.market.asks.getOrElse(resourceType, List.empty)
@@ -146,6 +170,10 @@ object MarketActor {
             val newState = state.copy(econActorIds = updatedEconActorIds)
 
             val newAsk = Ask(sellerId, resourceType, quantity, price)
+            logMarketEvent(
+              EventType.Custom("AskReceived"),
+              s"Ask received from $sellerId for $quantity $resourceType at price $price"
+            )
 
             // Look for matching bids (highest price first that meets criteria)
             val matchingBids = newState.market.bids.getOrElse(resourceType, List.empty)
@@ -171,6 +199,12 @@ object MarketActor {
               // Notify both parties
               buyerActor.foreach(_ ! PurchaseResource(resourceType, tradeQuantity, price))
               replyTo ! ReceiveSalePayment(tradeQuantity * price)
+
+              // Log transaction
+              logMarketEvent(
+                EventType.MarketTransaction,
+                s"Transaction: $tradeQuantity $resourceType sold by $sellerId to ${bestBid.buyerId} at price $price"
+              )
 
               // Update bids list
               val currentBids = newState.market.bids.getOrElse(resourceType, List.empty)

@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import RegionsMap from './RegionsMap';
-import RegionUI from './RegionUI';
-import RegionDetailsUI from './RegionDetailsUI';
 
 const GovernmentUI = ({ initialGovernment, initialRegions }) => {
   const [government, setGovernment] = useState(null);

@@ -5,7 +5,7 @@ import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout
-import middleware.GameInfo
+import middleware.{EventType, GameEvent, GameEventService, GameInfo}
 
 import java.util.UUID
 import scala.concurrent.Future
@@ -135,10 +135,23 @@ object RegionActor {
   implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
   def apply(state: RegionActorState): Behavior[Command] = Behaviors.setup { context =>
+    // Create event service
+    val eventService = GameEventService(context)
+
     def tick(state: RegionActorState): Behavior[Command] = {
 
       implicit val scheduler = context.system.scheduler
       implicit val ec = context.executionContext
+
+      // Helper function to log events, reducing repetition
+      def logEvent(eventType: EventType, eventText: String): Unit = {
+        eventService.logEvent(
+          agentId = state.region.id,
+          regionId = state.region.id,
+          eventType = eventType,
+          eventText = eventText
+        )
+      }
 
       Behaviors.receive { (context, message) =>
         val region = state.region
@@ -210,19 +223,19 @@ object RegionActor {
             // Otherwise, forward to the one bank in the region
             // This will almost certainly change in future iterations
             econAgentIds.get("bank").flatMap(_.headOption).foreach { bankId =>
-                if (bond.debtorId == bankId) {
-                  econAgentIds.getOrElse("government", List()).headOption.foreach { id =>
-                    econActors.get(id) match {
-                      case Some(govtActor: ActorRef[GovernmentActor.Command]) =>
-                        govtActor ! ReceiveBond(bond, replyTo, issuedFrom)
-                    }
-                  }
-                } else {
-                  econActors.get(bankId) match {
-                    case Some(bankActor: ActorRef[BankActor.Command]) =>
-                      bankActor ! ReceiveBond(bond, replyTo, issuedFrom)
+              if (bond.debtorId == bankId) {
+                econAgentIds.getOrElse("government", List()).headOption.foreach { id =>
+                  econActors.get(id) match {
+                    case Some(govtActor: ActorRef[GovernmentActor.Command]) =>
+                      govtActor ! ReceiveBond(bond, replyTo, issuedFrom)
                   }
                 }
+              } else {
+                econActors.get(bankId) match {
+                  case Some(bankActor: ActorRef[BankActor.Command]) =>
+                    bankActor ! ReceiveBond(bond, replyTo, issuedFrom)
+                }
+              }
             }
             Behaviors.same
 
@@ -239,6 +252,18 @@ object RegionActor {
                   updatedResources.updated(entry._1, updatedResources.getOrElse(entry._1, 0) + foodProduced)
                 case _ =>
                   updatedResources.updated(entry._1, updatedResources.getOrElse(entry._1, 0) + output.toInt)
+              }
+            }
+
+            // Log resource production events
+            newStoredResources.foreach { case (resourceType, quantity) =>
+              val previousQuantity = region.storedResources.getOrElse(resourceType, 0)
+              val produced = quantity - previousQuantity
+              if (produced > 0) {
+                logEvent(
+                  EventType.ResourceProduced,
+                  s"Produced ${produced} ${resourceType} (Total: ${quantity})"
+                )
               }
             }
 
@@ -279,8 +304,25 @@ object RegionActor {
             val foodConsumed = region.population //still tweaking this idea
             val updatedResources = region.storedResources + (Food -> Math.max(region.storedResources(Food) - foodConsumed, 0))
 
+            // Log food consumption
+            logEvent(
+              EventType.ResourceConsumed,
+              s"Consumed ${foodConsumed} food (Remaining: ${updatedResources(Food)})"
+            )
+
             val newPop = if (foodConsumed > region.storedResources(Food)) {
-              Math.max(region.population - Math.round((foodConsumed - region.storedResources(Food))/5), 0)
+              val popDecrease = Math.round((foodConsumed - region.storedResources(Food))/5)
+              val newPopValue = Math.max(region.population - popDecrease, 0)
+
+              // Log population decrease due to food shortage
+              if (popDecrease > 0) {
+                logEvent(
+                  EventType.PopulationChanged,
+                  s"Population decreased by ${popDecrease} due to food shortage (New: ${newPopValue})"
+                )
+              }
+
+              newPopValue
             } else {
               region.population
             }
@@ -313,12 +355,15 @@ object RegionActor {
             val growthFactor = baseGrowthFactor + growthRange * s
 
             val newPop = Math.round(region.population * growthFactor)
+            val popChange = newPop - region.population
 
-            /*println("================================")
-            println(s"population: $region.population")
-            println(s"growth factor: $growthFactor")
-            println(s"new population: $newPop")
-            println("================================")*/
+            // Log population change
+            if (popChange != 0) {
+              logEvent(
+                EventType.PopulationChanged,
+                s"Population ${if (popChange > 0) "increased" else "decreased"} by ${Math.abs(popChange)} (New: ${newPop})"
+              )
+            }
 
             tick(state.copy(region = region.copy(population = newPop)))
 
@@ -327,79 +372,51 @@ object RegionActor {
             Behaviors.same
 
           case ShowFullInfo(replyTo) =>
-            //println(s"[DEBUG] ShowFullInfo received for region ${region.id}")
-
             // Get producers list
-            //println(s"[DEBUG] Found ${econActors.getOrElse("producers", List.empty).size} producers")
             val producersFutures = econAgentIds.getOrElse("producers", List())
               .flatMap(id => econActors.get(id).map(actor => actor.ask(ShowInfo.apply)))
 
             // Get founders list
-            //println(s"[DEBUG] Found ${econActors.getOrElse("founders", List.empty).size} founders")
             val foundersFutures = econAgentIds.getOrElse("founders", List())
               .flatMap(id => econActors.get(id).map(actor => actor.ask(ShowInfo.apply)))
 
             // Get the first bank
-            //println(s"[DEBUG] Bank exists: ${econActors.getOrElse("bank", List.empty).headOption.isDefined}")
             val bankFuture = econAgentIds.getOrElse("bank", List()).headOption.flatMap(id => {
-              //println(s"[DEBUG] Asking bank ${actor.path.name} for info")
               econActors.get(id).map { actor =>
                 actor.ask(ShowInfo.apply)
               }
-            }).getOrElse({
-              //println("[DEBUG] No bank found, using empty future")
-              Future.successful(None)
-            })
+            }).getOrElse(Future.successful(None))
 
             // Get the first market
-            //println(s"[DEBUG] Market exists: ${econActors.getOrElse("market", List.empty).headOption.isDefined}")
             val marketFuture = econAgentIds.getOrElse("market", List()).headOption.flatMap(id => {
-              //println(s"[DEBUG] Asking market ${actor.path.name} for info")
               econActors.get(id).map { actor =>
                 actor.ask(ShowInfo.apply)
               }
-            }).getOrElse({
-              //println("[DEBUG] No market found, using empty future")
-              Future.successful(None)
-            })
+            }).getOrElse(Future.successful(None))
 
             // Combine all futures
-            //println("[DEBUG] Starting to combine futures")
             val producersAggregate = Future.sequence(producersFutures)
             val foundersAggregate = Future.sequence(foundersFutures)
 
-            //println("[DEBUG] Creating combined future with for-comprehension")
             val combinedFuture = for {
               producers <- producersAggregate
-              //_ = println(s"[DEBUG] Received responses from ${producers.size} producers")
               founders <- foundersAggregate
-              //_ = println(s"[DEBUG] Received responses from ${founders.size} founders")
               bank <- bankFuture
-              //_ = println(s"[DEBUG] Received bank response: ${bank.isDefined}")
               market <- marketFuture
-              //_ = println(s"[DEBUG] Received market response: ${market.isDefined}")
             } yield (producers, founders, bank, market)
 
-            //println("[DEBUG] Setting up onComplete handler for combined future")
             combinedFuture.onComplete {
               case Success((producersInfo, foundersInfo, bankInfo, marketInfo)) =>
-                //println("[DEBUG] Combined future completed successfully")
-
                 // Extract and cast producers to Producer type
-                //println(s"[DEBUG] Processing ${producersInfo.size} producer responses")
                 val producersData = try {
                   producersInfo.flatMap(info => {
-                    //println(s"[DEBUG] Processing producer info: ${info}")
                     info.map(infoResponse => {
-                      //println(s"[DEBUG] Processing producer agent: ${infoResponse.agent.getClass.getName}")
                       infoResponse.agent
                     })
                   }).collect {
                     case agent: Producer =>
-                      //println(s"[DEBUG] Successfully cast producer agent: ${agent.id}")
                       agent  // Cast to Producer
                   }.toList
-                  //println(s"[DEBUG] Extracted ${result.size} valid producers")
                 } catch {
                   case e: Exception =>
                     println(s"[DEBUG] Exception processing producers: ${e.getMessage}")
@@ -407,20 +424,15 @@ object RegionActor {
                 }
 
                 // Extract and cast founders to Founder type
-                //println(s"[DEBUG] Processing ${foundersInfo.size} founder responses")
                 val foundersData = try {
                   foundersInfo.flatMap(info => {
-                    //println(s"[DEBUG] Processing founder info: ${info}")
                     info.map(infoResponse => {
-                      //println(s"[DEBUG] Processing founder agent: ${infoResponse.agent.getClass.getName}")
                       infoResponse.agent
                     })
                   }).collect {
                     case agent: Founder =>
-                      //println(s"[DEBUG] Successfully cast founder agent: ${agent.id}")
                       agent // Cast to Founder
                   }.toList
-                  //println(s"[DEBUG] Extracted ${result.size} valid founders")
                 } catch {
                   case e: Exception =>
                     println(s"[DEBUG] Exception processing founders: ${e.getMessage}")
@@ -428,20 +440,15 @@ object RegionActor {
                 }
 
                 // Extract and cast bank to Bank type
-                //println(s"[DEBUG] Processing bank response: ${bankInfo}")
                 val bankData = try {
                   val result = bankInfo.flatMap(info => {
-                    //println(s"[DEBUG] Processing bank info agent: ${if (info != null) info.agent.getClass.getName else "null"}")
                     info.agent match {
                       case agent: Bank =>
-                        //println(s"[DEBUG] Successfully cast bank agent: ${agent.id}")
                         Some(agent)  // Cast to Bank
                       case other =>
-                        //println(s"[DEBUG] Failed to cast bank agent: ${other.getClass.getName}")
                         None
                     }
                   })
-                  //println(s"[DEBUG] Bank data extracted: ${result.isDefined}")
                   result
                 } catch {
                   case e: Exception =>
@@ -450,20 +457,16 @@ object RegionActor {
                 }
 
                 // Extract and cast market to Market type
-                //println(s"[DEBUG] Processing market response: ${marketInfo}")
                 val marketData = try {
                   val result = marketInfo.flatMap(info => {
-                    //println(s"[DEBUG] Processing market info agent: ${if (info != null) info.agent.getClass.getName else "null"}")
                     info.agent match {
                       case agent: Market =>
-                        //println(s"[DEBUG] Successfully cast market agent: ${agent.id}")
                         Some(agent)  // Cast to Market
                       case other =>
                         println(s"[DEBUG] Failed to cast market agent: ${other.getClass.getName}")
                         None
                     }
                   })
-                  //println(s"[DEBUG] Market data extracted: ${result.isDefined}")
                   result
                 } catch {
                   case e: Exception =>
@@ -471,12 +474,9 @@ object RegionActor {
                     None
                 }
 
-                //println("[DEBUG] Creating FullInfoResponse")
                 try {
                   val response = FullInfoResponse(region, producersData, foundersData, bankData, marketData)
-                  //println("[DEBUG] Sending response back to requester")
                   replyTo ! Some(response)
-                  //println("[DEBUG] Response sent successfully")
                 } catch {
                   case e: Exception =>
                     println(s"[DEBUG] Error creating or sending FullInfoResponse: ${e.getMessage}")
@@ -492,7 +492,6 @@ object RegionActor {
                 replyTo ! Some(FullInfoResponse(region, List.empty, List.empty, None, None))
             }
 
-            //println("[DEBUG] ShowFullInfo handler completed, returning Behaviors.same")
             Behaviors.same
 
           case MakeBid(sendTo, resourceType, quantity, price) =>
@@ -506,12 +505,26 @@ object RegionActor {
           case BuyFromSeller(seller, resourceType, quantity, price) =>
             seller ! SellToBuyer(context.self, resourceType, quantity, price)
             val updatedResources = region.storedResources + (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + quantity), Money -> (region.storedResources.getOrElse(Money, 0) - Math.multiplyExact(quantity, price)))
+
+            // Log market transaction (buying)
+            logEvent(
+              EventType.MarketTransaction,
+              s"Bought ${quantity} ${resourceType} at price ${price} (Total: ${quantity * price})"
+            )
+
             tick(state.copy(region = region.copy(storedResources = updatedResources)))
 
           case SellToBuyer(buyer, resourceType, quantity, price) =>
             val updatedResources = region.storedResources +
               (resourceType -> (region.storedResources.getOrElse(resourceType, 0) - quantity),
                 Money -> (region.storedResources.getOrElse(Money, 0) + Math.multiplyExact(quantity, price)))
+
+            // Log market transaction (selling)
+            logEvent(
+              EventType.MarketTransaction,
+              s"Sold ${quantity} ${resourceType} at price ${price} (Total: ${quantity * price})"
+            )
+
             tick(state.copy(region = region.copy(storedResources = updatedResources)))
 
 
@@ -524,6 +537,13 @@ object RegionActor {
                       case Success(Some(foodPrice: Int)) =>
                         if (price >= foodPrice) {
                           replyTo ! Right(())
+
+                          // Log worker hired event
+                          logEvent(
+                            EventType.WorkerHired,
+                            s"Worker hired by ${agentId} at wage ${price}"
+                          )
+
                           AssignWorkers(1)
                         } else {
                           replyTo ! Left(Some(foodPrice))
@@ -542,7 +562,15 @@ object RegionActor {
             Behaviors.same
 
           case ChangeSeason() =>
-            tick(state.copy(region = region.copy(season = region.season.next)))
+            val newSeason = region.season.next
+
+            // Log season change
+            logEvent(
+              EventType.SeasonChanged,
+              s"Season changed from ${region.season} to ${newSeason}"
+            )
+
+            tick(state.copy(region = region.copy(season = newSeason)))
 
           case BuildBank() =>
             econAgentIds.getOrElse("bank", List()).headOption match {
@@ -552,6 +580,13 @@ object RegionActor {
                 val newAgentEntry = bank.id :: List()
                 val newAgentsMap = econAgentIds + ("bank" -> newAgentEntry)
                 val newActorsMap = econActors + (bank.id -> actorRef)
+
+                // Log bank construction
+                logEvent(
+                  EventType.ConstructionCompleted,
+                  s"Bank constructed (ID: ${bank.id})"
+                )
+
                 tick(state.copy(econAgentIds = newAgentsMap, econActors = newActorsMap))
               case _ =>
                 Behaviors.same
@@ -566,6 +601,13 @@ object RegionActor {
                 val newAgentEntry = market.id :: List()
                 val newAgentsMap = econAgentIds + ("market" -> newAgentEntry)
                 val newActorsMap = econActors + (market.id -> actorRef)
+
+                // Log market construction
+                logEvent(
+                  EventType.ConstructionCompleted,
+                  s"Market constructed (ID: ${market.id})"
+                )
+
                 tick(state.copy(econAgentIds = newAgentsMap, econActors = newActorsMap))
               case _ =>
                 Behaviors.same
@@ -592,7 +634,7 @@ object RegionActor {
                     bankActor ! UpdateBondDebtor(producer.outstandingBonds.keys.toList, producer.id, actorRef)
                   case _ =>
                     println("====DOING NOTHING=====")
-                    // Do nothing if not a BankActor
+                  // Do nothing if not a BankActor
                 }
               }
             }
@@ -601,6 +643,12 @@ object RegionActor {
             val updatedProducerIds = producer.id :: econAgentIds.getOrElse("producers", List())
             val updatedAgentIds = econAgentIds + ("producers" -> updatedProducerIds)
             val updatedActors = econActors + (producer.id -> actorRef)
+
+            // Log producer construction
+            logEvent(
+              EventType.ConstructionCompleted,
+              s"Producer constructed (ID: ${producer.id}, Type: ${producer.resourceProduced})"
+            )
 
             // Remove the founder from econAgentIds and econActors if we found a founderId
             val (finalAgentIds, finalActors) = founderId match {
@@ -625,8 +673,6 @@ object RegionActor {
 
           case SpawnFounder() =>
             // Heuristic for limiting amount of founders happening at once
-            // TODO figure out ways to vary the "temperament" of different founders so they all respond to bid signals differently
-            // As of right now, this is going to cause all of them to overproduce on the same thing
             if (econAgentIds.getOrElse("founders", List()).length < 3) {
               val newId = UUID.randomUUID().toString
               val founder = Founder(newId, region.id, None)
@@ -634,15 +680,38 @@ object RegionActor {
               val updatedFounderIds = founder.id :: econAgentIds.getOrElse("founders", List())
               val updatedAgentIds = econAgentIds + ("founders" -> updatedFounderIds)
               val updatedActors = econActors + (founder.id -> actorRef)
+
+              // Log founder creation
+              logEvent(
+                EventType.FounderCreated,
+                s"New founder created (ID: ${founder.id})"
+              )
+
               tick(state.copy(econAgentIds = updatedAgentIds, econActors = updatedActors))
             } else {
               Behaviors.same
             }
 
           case UnassignWorkers(qty) =>
+            // Log worker unassignment
+            if (qty > 0) {
+              logEvent(
+                EventType.WorkerHired,
+                s"${qty} workers unassigned (Total assigned: ${region.assignedWorkers - qty})"
+              )
+            }
+
             tick(state.copy(region = region.copy(assignedWorkers = region.assignedWorkers - qty)))
 
           case AssignWorkers(qty) =>
+            // Log worker assignment
+            if (qty > 0) {
+              logEvent(
+                EventType.WorkerHired,
+                s"${qty} workers assigned (Total assigned: ${region.assignedWorkers + qty})"
+              )
+            }
+
             tick(state.copy(region = region.copy(assignedWorkers = region.assignedWorkers + qty)))
 
           case ActorNoOp() =>
@@ -651,20 +720,9 @@ object RegionActor {
 
           case _ =>
             Behaviors.same
-          }
-        }
-    }
-
-    /*def initialize(region: Region): Behavior[Command] = {
-      Behaviors.receive { (context, message) =>
-        message match {
-          case InitializeRegion(region) =>
-            tick(region)
-          case _ =>
-            Behaviors.same
         }
       }
-    }*/
+    }
 
     Behaviors.withTimers { timers =>
       timers.startTimerWithFixedDelay("consumption", ConsumeFood(), 10.second)
