@@ -38,6 +38,8 @@ object GovernmentActor {
     val agent: Government = government
   }
 
+  case class UpdateBond(updatedBond: Bond) extends GovtCommand
+
   case class AddRegion(uuid: String, ref: ActorRef[RegionActor.Command]) extends GovtCommand
 
 
@@ -93,26 +95,26 @@ object GovernmentActor {
               }
               Behaviors.same
 
-          case MakeBid(sendTo, resourceType, quantity, price) =>
-            sendTo ! ReceiveBid(context.self, government.id, resourceType, quantity, price)
-            Behaviors.same
+            case MakeBid(sendTo, resourceType, quantity, price) =>
+              sendTo ! ReceiveBid(context.self, government.id, resourceType, quantity, price)
+              Behaviors.same
 
-          case MakeAsk(sendTo, resourceType, quantity, price) =>
-            sendTo ! ReceiveAsk(context.self, government.id, resourceType, quantity, price)
-            tick(government.copy(
-              storedResources = storedResources +
-                (resourceType -> (storedResources.getOrElse(resourceType, 0) - quantity))))
+            case MakeAsk(sendTo, resourceType, quantity, price) =>
+              sendTo ! ReceiveAsk(context.self, government.id, resourceType, quantity, price)
+              tick(government.copy(
+                storedResources = storedResources +
+                  (resourceType -> (storedResources.getOrElse(resourceType, 0) - quantity))))
 
-          case PurchaseResource(resourceType, quantity, price) =>
-            val updatedResources = storedResources +
-              (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
-              (Money -> (storedResources.getOrElse(Money, 0) - (quantity*price)))
-            tick(government.copy(storedResources = updatedResources))
+            case PurchaseResource(resourceType, quantity, price) =>
+              val updatedResources = storedResources +
+                (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
+                (Money -> (storedResources.getOrElse(Money, 0) - (quantity*price)))
+              tick(government.copy(storedResources = updatedResources))
 
-          case ReceiveSalePayment(amount) =>
-            val updatedResources = storedResources +
-              (Money -> (storedResources.getOrElse(Money, 0) + amount))
-            tick(government.copy(storedResources = updatedResources))
+            case ReceiveSalePayment(amount) =>
+              val updatedResources = storedResources +
+                (Money -> (storedResources.getOrElse(Money, 0) + amount))
+              tick(government.copy(storedResources = updatedResources))
 
             case ReceiveBond(bond, replyTo, issuedFrom) =>
               replyTo ! Some(bond.copy(interestRate = government.interestRate)) // TODO consider risks of having ID mess up matching
@@ -121,6 +123,51 @@ object GovernmentActor {
                 econActors = government.econActors + (bond.debtorId -> issuedFrom),
                 bonds = government.bonds + (bond.id -> bond)
               ))
+
+            case CollectBondPayment(bondId, amount) =>
+              // Look up the current version of the bond
+              government.bonds.get(bondId) match {
+                case Some(currentBond) =>
+                  context.log.info(s"Government collecting payment of $amount on bond ${currentBond.id} from ${currentBond.debtorId}")
+
+                  government.econActors.get(currentBond.debtorId) match {
+                    case Some(actorRef) =>
+                      context.ask(actorRef, PayBond(currentBond, amount, _)) {
+                        case Success(payment: Int) =>
+                          val updatedBond = currentBond.copy(totalOutstanding = ((currentBond.totalOutstanding - payment) * currentBond.interestRate).toInt)
+
+                          if (updatedBond.totalOutstanding <= 0) {
+                            context.log.info(s"Bond ${currentBond.id} fully repaid by ${currentBond.debtorId}. Final payment: $payment")
+                            timers.cancel(s"collect-$bondId")
+                          }
+
+                          UpdateBond(updatedBond)
+                        case Failure(err) =>
+                          context.log.error(s"Failed to collect payment on bond ${currentBond.id}: ${err.getMessage}")
+                          ActorNoOp()
+                        case _ =>
+                          ActorNoOp()
+                      }
+                    case None =>
+                      context.log.warn(s"Could not find actor reference for debtor ${currentBond.debtorId}")
+                  }
+                case None =>
+                  context.log.warn(s"Bond $bondId no longer exists in bonds owned")
+                  timers.cancel(s"collect-$bondId")
+              }
+              Behaviors.same
+
+              // Helper case class to update a bond in the government's state
+
+            // Add this case to the match block in the GovernmentActor's tick method
+            case UpdateBond(updatedBond) =>
+              if (updatedBond.totalOutstanding <= 0) {
+                // Remove the fully paid bond
+                tick(government.copy(bonds = government.bonds - updatedBond.id))
+              } else {
+                // Update the bond with new outstanding amount
+                tick(government.copy(bonds = government.bonds + (updatedBond.id -> updatedBond)))
+              }
 
             case AddRegion(uuid, ref) =>
               tick(government.copy(regions = government.regions + (uuid -> ref)))

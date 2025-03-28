@@ -121,6 +121,43 @@ object BankActor {
               }
               Behaviors.same
 
+            case PayBond(bond, amount, replyTo) =>
+              val amountToPay = Math.min(bank.storedMoney, amount) // Pay what it can without defaults
+
+              if (amountToPay < amount) {
+                logBankEvent(
+                  EventType.Custom("PartialPayment"),
+                  s"Making partial bond payment: $amountToPay of requested $amount"
+                )
+              } else {
+                logBankEvent(
+                  EventType.BondRepaid,
+                  s"Making bond payment of $amountToPay to bond ${bond.id}"
+                )
+              }
+
+              val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay) * bond.interestRate).toInt)
+              val newOutstandingBonds = if (updatedBond.totalOutstanding <= 0) {
+                logBankEvent(
+                  EventType.BondRepaid,
+                  s"Bond ${bond.id} fully repaid"
+                )
+                bank.outstandingBonds - bond.id
+              } else {
+                bank.outstandingBonds + (bond.id -> updatedBond)
+              }
+
+              // Update the bank's stored money
+              val newStoredMoney = bank.storedMoney - amountToPay
+
+              // Reply with the amount paid
+              replyTo ! amountToPay
+
+              tick(state = state.copy(bank = bank.copy(
+                storedMoney = newStoredMoney,
+                outstandingBonds = newOutstandingBonds
+              )))
+
             case AddOutstandingBond(bond) =>
               val newOutstandingBonds = bank.outstandingBonds + (bond.id -> bond)
               logBankEvent(
