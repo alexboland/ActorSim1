@@ -83,37 +83,95 @@
 .infoRow {
   display: flex;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .infoLabel {
   font-weight: bold;
-  width: 120px;
+  width: 150px;
   color: #4b5563;
+  flex-shrink: 0;
 }
 
-/* JSON Display */
-.jsonSection {
-  background-color: white;
+/* Bonds List */
+.bondsList {
+  margin-top: 12px;
   border: 1px solid #e2e8f0;
   border-radius: 4px;
-  padding: 12px;
+  overflow: hidden;
 }
 
-.jsonTitle {
-  font-size: 0.875rem;
-  font-weight: bold;
-  color: #4b5563;
-  margin-bottom: 8px;
+.bondItem {
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.jsonDisplay {
+.bondItem:last-child {
+  border-bottom: none;
+}
+
+.bondHeader {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background-color: white;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.bondHeader:hover {
+  background-color: #f1f5f9;
+}
+
+.bondId {
   font-family: monospace;
   font-size: 0.875rem;
-  background-color: #f1f5f9;
+  color: #4b5563;
+  flex: 1;
+}
+
+.bondAmount {
+  font-weight: bold;
+  color: #1e3a8a;
+  margin-right: 16px;
+}
+
+.expandIcon {
+  color: #64748b;
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+}
+
+.bondDetails {
+  padding: 12px 16px;
+  background-color: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.875rem;
+}
+
+.bondDetailRow {
+  display: flex;
+  margin-bottom: 6px;
+}
+
+.bondDetailRow:last-child {
+  margin-bottom: 0;
+}
+
+.bondDetailLabel {
+  width: 100px;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.emptyBonds {
+  margin-top: 8px;
   padding: 12px;
+  background-color: #f8fafc;
+  border: 1px dashed #e2e8f0;
   border-radius: 4px;
-  overflow-x: auto;
-  white-space: pre-wrap;
+  color: #64748b;
+  font-style: italic;
+  text-align: center;
 }
 
 /* Empty State */
