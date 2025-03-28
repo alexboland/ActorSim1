@@ -1,0 +1,174 @@
+/* Bank Tab Styles */
+.bankTabContainer {
+  padding: 10px 0;
+}
+
+/* Section Styles */
+.sectionTitle {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-bottom: 12px;
+  color: #333;
+}
+
+/* Summary Section */
+.summarySection {
+  margin-bottom: 20px;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.summaryCard {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px;
+  transition: all 0.2s ease;
+}
+
+.summaryCard:hover {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.summaryLabel {
+  font-size: 0.875rem;
+  color: #4b5563;
+  margin-bottom: 4px;
+}
+
+.summaryValue {
+  font-size: 1.125rem;
+  font-weight: bold;
+  color: #1e40af;
+}
+
+/* Bonds Section */
+.bondsSection {
+  margin-bottom: 20px;
+}
+
+.bondsTabs {
+  display: flex;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.bondTabButton {
+  padding: 8px 16px;
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  margin-right: 8px;
+  font-weight: normal;
+  transition: all 0.2s ease;
+}
+
+.activeTab {
+  border-bottom: 2px solid #3b82f6;
+  background-color: #eff6ff;
+  font-weight: bold;
+}
+
+.bondsListContainer {
+  min-height: 200px;
+}
+
+.emptyMessage {
+  color: #6b7280;
+  font-style: italic;
+  padding: 12px 0;
+  text-align: center;
+}
+
+/* Table Styles */
+.tableContainer {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tableHeaderCell {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.tableHeaderCellRight {
+  padding: 10px;
+  text-align: right;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.tableRow {
+  border-bottom: 1px solid #e2e8f0;
+  transition: background-color 0.2s ease;
+}
+
+.tableRow:hover {
+  background-color: #f1f5f9;
+}
+
+.tableCell {
+  padding: 10px;
+  text-align: left;
+}
+
+.tableCellRight {
+  padding: 10px;
+  text-align: right;
+}
+
+/* Action Section */
+.actionsSection {
+  margin-bottom: 10px;
+}
+
+.actionButtons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.actionButton {
+  background-color: #3b82f6;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.actionButton:hover {
+  background-color: #2563eb;
+}
+
+@media (max-width: 640px) {
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .actionButtons {
+    flex-direction: column;
+  }
+}

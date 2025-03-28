@@ -1,0 +1,60 @@
+/* Resource Grid */
+.resourceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.resourceCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px;
+  background-color: #f8fafc;
+  transition: transform 0.2s ease;
+}
+
+.resourceCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.resourceName {
+  font-weight: bold;
+  margin-bottom: 5px;
+  color: #4b5563;
+}
+
+.resourceAmount {
+  font-size: 1.25rem;
+  color: #1f2937;
+}
+
+/* Resource-specific colors - can be expanded */
+.resourceCard[data-resource="Food"] {
+  background-color: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.resourceCard[data-resource="Wood"] {
+  background-color: #f8f9d9;
+  border-color: #fde68a;
+}
+
+.resourceCard[data-resource="Copper"] {
+  background-color: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .resourceGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .resourceGrid {
+    grid-template-columns: 1fr;
+  }
+}

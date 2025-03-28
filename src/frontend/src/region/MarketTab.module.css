@@ -1,0 +1,294 @@
+/* Market Tab Styles */
+.marketTabContainer {
+  padding: 10px 0;
+}
+
+/* Market Header */
+.marketHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.marketId {
+  font-weight: bold;
+  color: #1e293b;
+}
+
+.marketStatus {
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+.statusIndicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #22c55e;
+  margin-right: 6px;
+  display: inline-block;
+}
+
+/* View Selector */
+.viewSelector {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.viewButton {
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.viewButton:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.viewButton:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.activeView {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+  font-weight: bold;
+}
+
+/* Content Section */
+.contentSection {
+  min-height: 400px;
+}
+
+/* Market Overview */
+.marketOverviewContainer {
+  margin-bottom: 16px;
+}
+
+/* Order Form */
+.orderFormContainer {
+  margin-bottom: 20px;
+}
+
+.orderTypeSelector {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.orderTypeButton {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.orderTypeButton:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.orderTypeButton:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.activeOrderType {
+  font-weight: bold;
+}
+
+.orderTypeButton:first-child.activeOrderType {
+  background-color: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.orderTypeButton:last-child.activeOrderType {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.formContent {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.formGroup {
+  margin-bottom: 16px;
+}
+
+.formRow {
+  display: flex;
+  gap: 16px;
+}
+
+.formRow .formGroup {
+  flex: 1;
+}
+
+.formLabel {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+.formInput,
+.formSelect {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background-color: white;
+}
+
+.orderSummary {
+  margin: 16px 0;
+  padding: 12px;
+  background-color: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.totalValue {
+  font-weight: bold;
+  font-size: 1.1em;
+}
+
+.buyText {
+  color: #166534;
+  font-weight: bold;
+}
+
+.sellText {
+  color: #991b1b;
+  font-weight: bold;
+}
+
+.placeOrderButton {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.buyButton {
+  background-color: #22c55e;
+  color: white;
+}
+
+.buyButton:hover {
+  background-color: #16a34a;
+}
+
+.sellButton {
+  background-color: #ef4444;
+  color: white;
+}
+
+.sellButton:hover {
+  background-color: #dc2626;
+}
+
+.placeOrderButton:disabled {
+  background-color: #d1d5db;
+  cursor: not-allowed;
+}
+
+/* My Orders */
+.myOrdersContainer {
+  margin-bottom: 16px;
+}
+
+/* Empty Messages */
+.emptyMessage {
+  text-align: center;
+  padding: 24px;
+  color: #6b7280;
+  font-style: italic;
+  background-color: #f8fafc;
+  border: 1px dashed #e2e8f0;
+  border-radius: 4px;
+}
+
+/* Table Styles */
+.tableContainer {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tableHeaderCell {
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.tableHeaderCellRight {
+  padding: 10px;
+  text-align: right;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.tableRow {
+  border-bottom: 1px solid #e2e8f0;
+  transition: background-color 0.2s ease;
+}
+
+.tableRow:hover {
+  background-color: #f1f5f9;
+}
+
+.tableCell {
+  padding: 10px;
+  text-align: left;
+}
+
+.tableCellRight {
+  padding: 10px;
+  text-align: right;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 640px) {
+  .formRow {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .viewSelector {
+    flex-wrap: wrap;
+  }
+
+  .viewButton {
+    flex: 1;
+    min-width: 120px;
+  }
+}

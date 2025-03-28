@@ -1,0 +1,206 @@
+/* Modal Layout */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modalContainer {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  width: 80%;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow: auto;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.modalTitle {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.modalFooter {
+  margin-top: 20px;
+  text-align: right;
+}
+
+/* Tab Navigation */
+.tabsContainer {
+  display: flex;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.tabButton {
+  padding: 8px 16px;
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  margin-right: 8px;
+  font-weight: normal;
+}
+
+.activeTab {
+  border-bottom: 2px solid #3b82f6;
+  background-color: #eff6ff;
+  font-weight: bold;
+}
+
+/* Content Sections */
+.sectionTitle {
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.infoSection {
+  margin-bottom: 16px;
+}
+
+.infoRow {
+  display: flex;
+  margin-bottom: 4px;
+}
+
+.infoLabel {
+  font-weight: bold;
+  width: 150px;
+}
+
+/* Table Styles */
+.tableContainer {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tableHeaderCell {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.tableHeaderCellRight {
+  padding: 8px;
+  text-align: right;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
+.tableRow {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tableCell {
+  padding: 8px;
+  text-align: left;
+}
+
+.tableCellRight {
+  padding: 8px;
+  text-align: right;
+}
+
+/* Producer Cards */
+.producersGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.producerCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 12px;
+  cursor: pointer;
+  background-color: white;
+}
+
+.selectedProducer {
+  background-color: #eff6ff;
+}
+
+.producerTitle {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.producerId {
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+.producerDetails {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 16px;
+  background-color: #f8fafc;
+}
+
+.producerDetailsTitle {
+  font-size: 1.125rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.producerDetailsCode {
+  background-color: white;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+}
+
+/* Buttons */
+.primaryButton {
+  background-color: #3b82f6;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.secondaryButton {
+  background-color: #e5e7eb;
+  color: #374151;
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
+
+/* Utility Classes */
+.errorMessage {
+  color: red;
+}

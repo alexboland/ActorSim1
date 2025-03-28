@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Delaunay } from 'd3-delaunay';
 import * as d3 from 'd3';
-import RegionModal from './RegionModal'; // Import the RegionModal component
+import RegionModal from './region/RegionModal'; // Import the RegionModal component
 
 const RegionTooltip = ({ region, latestData, position }) => {
     if (!position) return null;

@@ -1,0 +1,135 @@
+/* Founders Tab Styles */
+.foundersTabContainer {
+  padding: 10px 0;
+}
+
+/* Headers */
+.foundersHeader {
+  margin-bottom: 16px;
+}
+
+.sectionTitle {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+/* Founders Grid */
+.foundersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.founderCard {
+  background-color: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.founderCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.selectedFounder {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.founderTitle {
+  font-weight: bold;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.founderId {
+  font-family: monospace;
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.founderSite {
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+/* Founder Details */
+.founderDetails {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.founderDetailsTitle {
+  font-size: 1.125rem;
+  font-weight: bold;
+  color: #1e293b;
+  margin-bottom: 16px;
+}
+
+.infoSection {
+  margin-bottom: 16px;
+}
+
+.infoRow {
+  display: flex;
+  margin-bottom: 8px;
+}
+
+.infoLabel {
+  font-weight: bold;
+  width: 120px;
+  color: #4b5563;
+}
+
+/* JSON Display */
+.jsonSection {
+  background-color: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.jsonTitle {
+  font-size: 0.875rem;
+  font-weight: bold;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+
+.jsonDisplay {
+  font-family: monospace;
+  font-size: 0.875rem;
+  background-color: #f1f5f9;
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+/* Empty State */
+.emptyMessage {
+  text-align: center;
+  padding: 24px;
+  background-color: #f8fafc;
+  border: 1px dashed #e2e8f0;
+  border-radius: 6px;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 640px) {
+  .foundersGrid {
+    grid-template-columns: 1fr;
+  }
+}
