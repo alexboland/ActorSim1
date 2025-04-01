@@ -97,13 +97,14 @@ object BankActor {
                 // TODO additional money will come from deposits by region/producers, but for now this will suffice
                 context.self ! IssueBond(state.regionActor, bond.principal, bank.interestRate * 0.9)
               }
-              replyTo ! Some(bond.copy(interestRate = bank.interestRate)) // TODO consider risks of having ID mess up matching
-              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond.id, Math.round(bond.principal/10)), 20.second)
+              val counterOffer = bond.copy(interestRate = bank.interestRate)
+              replyTo ! Some(counterOffer) // TODO consider risks of having ID mess up matching
+              timers.startTimerWithFixedDelay(s"collect-${counterOffer.id}", CollectBondPayment(counterOffer.id, Math.round(counterOffer.principal/10)), 20.second)
               tick(state.copy(
-                econActors = state.econActors + (bond.debtorId -> issuedFrom),
+                econActors = state.econActors + (counterOffer.debtorId -> issuedFrom),
                 bank = bank.copy(
-                  bondsOwned = bank.bondsOwned + (bond.id -> bond),
-                  storedMoney = bank.storedMoney - bond.principal
+                  bondsOwned = bank.bondsOwned + (counterOffer.id -> counterOffer),
+                  storedMoney = bank.storedMoney - counterOffer.principal
                 )))
 
             case IssueBond(sendTo, principal, interest) =>

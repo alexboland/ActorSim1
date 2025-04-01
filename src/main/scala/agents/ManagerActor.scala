@@ -27,6 +27,10 @@ object ManagerActor {
   case class AggregateRegionsInfo(replyTo: ActorRef[List[RegionActor.InfoResponse]], requestId: UUID, response: Option[RegionActor.InfoResponse], expectedSize: Int) extends Command
   case class GetFullRegionInfo(uuid: String, replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
   case class GetRegionActor(uuid: String, replyTo: ActorRef[Option[ActorRef[RegionActor.Command]]]) extends Command
+  case class SetGovernmentPrice(priceType: String, resourceType: ResourceType, price: Int, replyTo: ActorRef[Boolean]) extends Command
+  case class SetGovernmentInterestRate(rate: Double, replyTo: ActorRef[Boolean]) extends Command
+  case class ActorNoOp() extends Command
+
 
   // New commands for game history
   case class AddGameEvent(event: GameEvent) extends Command
@@ -161,6 +165,46 @@ object ManagerActor {
             replyTo ! RegionsCreated(Right(actorRefs))
           case None =>
             replyTo ! RegionsCreated(Left("cannot create regions without government"))
+        }
+        Behaviors.same
+
+      case SetGovernmentInterestRate(rate, replyTo) =>
+        government match {
+          case Some(govtActor) =>
+            govtActor ! SetInterestRate(rate)
+             replyTo ! true
+          case None =>
+            replyTo ! false
+        }
+        Behaviors.same
+
+      case SetGovernmentPrice(priceType, resourceType, price, replyTo) =>
+        government match {
+          case Some(govtActor) =>
+            priceType.toLowerCase match {
+              case "bid" =>
+                context.ask(govtActor, GovernmentActor.SetBidPrice(resourceType, price, _)) {
+                  case Success(_) =>
+                    replyTo ! true
+                    ActorNoOp()
+                  case Failure(_) =>
+                    replyTo ! false
+                    ActorNoOp()
+                }
+              case "ask" =>
+                context.ask(govtActor, GovernmentActor.SetAskPrice(resourceType, price, _)) {
+                  case Success(_) =>
+                    replyTo ! true
+                    ActorNoOp()
+                  case Failure(_) =>
+                    replyTo ! false
+                    ActorNoOp()
+                }
+              case _ =>
+                replyTo ! false
+            }
+          case None =>
+            replyTo ! false
         }
         Behaviors.same
 

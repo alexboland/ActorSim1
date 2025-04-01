@@ -134,9 +134,11 @@ object JsonCodecs {
   implicit val governmentEncoder: Encoder[Government] = new Encoder[Government] {
     final def apply(government: Government): Json = Json.obj(
       "storedResources" -> government.storedResources.asJson,
+      "interestRate" -> government.interestRate.asJson,
       "askPrices" -> government.askPrices.asJson,
       "bidPrices" -> government.bidPrices.asJson,
-      "regions" -> government.regions.keys.asJson
+      "regions" -> government.regions.keys.asJson,
+      "bonds" -> government.bonds.asJson
     )
   }
 

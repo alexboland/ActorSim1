@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import GovernmentUI from './GovernmentUI';
+import GovernmentUI from './government/GovernmentUI';
 import HistoryExplorer from './HistoryExplorer';
 import * as d3 from "d3"; // Imports all d3 modules
 

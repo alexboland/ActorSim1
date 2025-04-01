@@ -30,9 +30,9 @@ object GovernmentActor {
 
   case class InitializeGov(government: Government) extends GovtCommand
 
-  case class SetBidPrice(resourceType: ResourceType, price: Int) extends GovtCommand
+  case class SetBidPrice(resourceType: ResourceType, price: Int, replyTo: ActorRef[Boolean]) extends GovtCommand
 
-  case class SetAskPrice(resourceType: ResourceType, price: Int) extends GovtCommand
+  case class SetAskPrice(resourceType: ResourceType, price: Int, replyTo: ActorRef[Boolean]) extends GovtCommand
 
   case class InfoResponse(government: Government) extends GameInfo.InfoResponse {
     val agent: Government = government
@@ -41,7 +41,6 @@ object GovernmentActor {
   case class UpdateBond(updatedBond: Bond) extends GovtCommand
 
   case class AddRegion(uuid: String, ref: ActorRef[RegionActor.Command]) extends GovtCommand
-
 
   case class BuyAndSellResources() extends GovtCommand
 
@@ -82,13 +81,23 @@ object GovernmentActor {
               replyTo ! government.askPrices.get(resourceType)
               Behaviors.same
 
+            case SetBidPrice(resourceType, price, replyTo) =>
+              val newBidPrices = government.bidPrices + (resourceType -> price)
+              replyTo ! true
+              tick(government.copy(bidPrices = newBidPrices))
+
+            case SetAskPrice(resourceType, price, replyTo) =>
+              val newAskPrices = government.askPrices + (resourceType -> price)
+              replyTo ! true
+              tick(government.copy(askPrices = newAskPrices))
+
             case BuyAndSellResources() =>
               government.regions.foreach { (regionUuid, regionActor) =>
                 government.bidPrices.foreach { (rt, price) =>
                   context.self ! MakeBid(regionActor, rt, 10, price) // TODO figure out quantity, for now it'll just calibrate on its own hopefully
                 }
                 government.askPrices.foreach { (rt, price) =>
-                  if (storedResources.getOrElse(rt, 0) > 0) {
+                  if (storedResources.getOrElse(rt, 0) >= 10) {
                     context.self ! MakeAsk(regionActor, rt, 10, price)
                   }
                 }
@@ -107,21 +116,16 @@ object GovernmentActor {
 
             case PurchaseResource(resourceType, quantity, price) =>
               val updatedResources = storedResources +
-                (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
-                (Money -> (storedResources.getOrElse(Money, 0) - (quantity*price)))
-              tick(government.copy(storedResources = updatedResources))
-
-            case ReceiveSalePayment(amount) =>
-              val updatedResources = storedResources +
-                (Money -> (storedResources.getOrElse(Money, 0) + amount))
+                (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity))
               tick(government.copy(storedResources = updatedResources))
 
             case ReceiveBond(bond, replyTo, issuedFrom) =>
-              replyTo ! Some(bond.copy(interestRate = government.interestRate)) // TODO consider risks of having ID mess up matching
-              timers.startTimerWithFixedDelay(s"collect-${bond.id}", CollectBondPayment(bond.id, Math.round(bond.principal / 10)), 20.second)
+              val counterOffer = bond.copy(interestRate = government.interestRate)
+              replyTo ! Some(counterOffer) // TODO consider risks of having ID mess up matching
+              timers.startTimerWithFixedDelay(s"collect-${counterOffer.id}", CollectBondPayment(counterOffer.id, Math.round(counterOffer.principal / 10)), 20.second)
               tick(government.copy(
-                econActors = government.econActors + (bond.debtorId -> issuedFrom),
-                bonds = government.bonds + (bond.id -> bond)
+                econActors = government.econActors + (counterOffer.debtorId -> issuedFrom),
+                bonds = government.bonds + (counterOffer.id -> counterOffer)
               ))
 
             case CollectBondPayment(bondId, amount) =>

@@ -1,0 +1,133 @@
+.governmentBox {
+  border: 2px solid #4a5568;
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 30px;
+  background: linear-gradient(to bottom right, #e9d5ff, #8b5cf6);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.heading {
+  font-size: 2em;
+  color: #ffffff;
+  margin-bottom: 20px;
+}
+
+.tabContainer {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tabsWrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  padding-right: 15px;
+}
+
+.tabs {
+  display: flex;
+}
+
+.refreshButton {
+  padding: 8px 16px;
+  background: #4a5568;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+.refreshButton:hover {
+  background: #2d3748;
+}
+
+.refreshButton:active {
+  transform: scale(0.98);
+}
+
+.refreshing {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.tabButton {
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  font-weight: 500;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tabButton:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.activeTab {
+  background: rgba(255, 255, 255, 0.4);
+  color: #4a5568;
+  border-bottom: 3px solid #4a5568;
+}
+
+.tabContent {
+  padding: 20px;
+}
+
+.controlPanel {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  margin-right: 15px;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #4a5568;
+}
+
+.button {
+  padding: 10px 15px;
+  background: #4a5568;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 15px;
+  transition: background 0.3s ease;
+}
+
+.button:hover {
+  background: #2d3748;
+}
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modalContent {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 80%;
+  max-height: 80%;
+  overflow: auto;
+}
