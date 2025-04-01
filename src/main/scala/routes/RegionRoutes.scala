@@ -134,31 +134,6 @@ object RegionRoutes {
                   }
               }
             }
-          },
-          pathPrefix("build" / Segment) { structure =>
-            post {
-              println(s"building ${structure} for region ${uuid}")
-              val regionFuture: Future[Option[ActorRef[RegionActor.Command]]] = system.ask(ref => ManagerActor.GetRegionActor(uuid, ref))
-                onComplete(regionFuture) {
-                  case Success(response) =>
-                    response match {
-                      case Some(actorRef) =>
-                        if (structure.equals("farm")) {
-                          actorRef ! RegionActor.BuildFarm()
-                        } else if (structure.equals("bank")) {
-                          actorRef ! RegionActor.BuildBank()
-                        }
-                        complete(StatusCodes.OK)
-                      case (None) =>
-                        complete(StatusCodes.NotFound, s"couldn't find region ${uuid}")
-                    }
-                  case Failure(error) =>
-                    println(error)
-                    complete(error)
-                  case _ =>
-                    complete(StatusCodes.OK)
-                }
-            }
           }
         )
       })

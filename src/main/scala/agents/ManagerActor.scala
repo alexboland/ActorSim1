@@ -1,6 +1,6 @@
 package agents
 
-import agents.RegionActor.ShowFullInfo
+import agents.Region.ShowFullInfo
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.util.Timeout

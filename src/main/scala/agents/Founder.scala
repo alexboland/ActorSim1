@@ -1,7 +1,7 @@
 package agents
 
 import agents.Founder.*
-import agents.RegionActor.{BuildProducer, UnassignWorkers}
+import agents.Region.{BuildProducer, UnassignWorkers}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
@@ -13,7 +13,9 @@ import scala.util.Success
 
 case class FounderActorState(
                               founder: Founder,
-                              regionActor: ActorRef[RegionActor.Command]
+                              regionActor: ActorRef[RegionActor.Command],
+                              marketActor: ActorRef[MarketActor.Command],
+                              bankActor: ActorRef[BankActor.Command]
                             )
 
 case class Founder(
@@ -161,10 +163,10 @@ object FounderActor {
                   } else if (facility.storedResources.getOrElse(Money, 0) < facility.maxWorkers * facility.wage) {
                     // Would prefer to do this with the ask pattern but IssueBond may take multiple tries after which the callback is lost
                     // So instead IssueBond takes care of going back into the loop of hiring workers
-                    context.self ! IssueBond(state.regionActor, facility.maxWorkers * facility.wage, 0.01)
+                    context.self ! IssueBond(state.bankActor, facility.maxWorkers * facility.wage, 0.01)
                     Behaviors.same
                   } else {
-                    context.ask(state.regionActor, RegionActor.ReceiveWorkerBid(_, state.founder.id, facility.wage)) {
+                    context.ask(state.regionActor, Region.ReceiveWorkerBid(_, state.founder.id, facility.wage)) {
                       case Success(Right(())) =>
                         AddWorker()
                       case Success(Left(Some(co: Int))) =>

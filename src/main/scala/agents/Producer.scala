@@ -13,8 +13,9 @@ import scala.util.{Failure, Success}
 
 case class ProducerActorState(
                            producer: Producer,
-                           econActors: Map[String, ActorRef[BankActor.Command]],
                            regionActor: ActorRef[RegionActor.Command],
+                           marketActor: ActorRef[MarketActor.Command],
+                           bankActor: ActorRef[BankActor.Command],
                            bidPrices: Map[ResourceType, Int]
                              )
 
@@ -105,7 +106,7 @@ object ProducerActor {
                 EventType.Custom("InsufficientFunds"),
                 s"Not enough money to pay all workers. Issuing bond to cover wages."
               )
-              context.self ! IssueBond(state.regionActor, producer.maxWorkers * producer.wage, 0.01)
+              context.self ! IssueBond(state.bankActor, producer.maxWorkers * producer.wage, 0.01)
             }
 
             val updatedResources = storedResources +
@@ -178,9 +179,9 @@ object ProducerActor {
               s"Attempting to procure $quantity units of $resourceType"
             )
 
-            context.ask(state.regionActor, GetAskPrice(_, resourceType)) {
+            context.ask(state.marketActor, GetAskPrice(_, resourceType)) {
               case Success(Some(price: Int)) =>
-                MakeBid(state.regionActor, resourceType, quantity, price)
+                MakeBid(state.marketActor, resourceType, quantity, price)
               case Success(None) =>
                 //Nothing to be done, next attempt at production will come with another attempt at procurement
                 logProducerEvent(
@@ -199,17 +200,17 @@ object ProducerActor {
               s"Attempting to sell $quantity units of $resourceType"
             )
 
-            context.ask(state.regionActor, GetBidPrice(_, resourceType)) {
+            context.ask(state.marketActor, GetBidPrice(_, resourceType)) {
               case Success(Some(price: Int)) =>
                 val askPrice = Math.max(price, calculateProductionCost(state))
-                MakeAsk(state.regionActor, resourceType, quantity, askPrice)
+                MakeAsk(state.marketActor, resourceType, quantity, askPrice)
               case Success(None) =>
                 val costPrice = calculateProductionCost(state)
                 logProducerEvent(
                   EventType.Custom("NoBids"),
                   s"No bids found for $resourceType. Using cost price of $costPrice."
                 )
-                MakeAsk(state.regionActor, resourceType, quantity, costPrice)
+                MakeAsk(state.marketActor, resourceType, quantity, costPrice)
               case _ =>
                 ActorNoOp()
             }
@@ -302,7 +303,7 @@ object ProducerActor {
               )
               // Would prefer to do this with the ask pattern but IssueBond may take multiple tries after which the callback is lost
               // So instead IssueBond takes care of going back into the loop of hiring workers
-              context.self ! IssueBond(state.regionActor, producer.maxWorkers * producer.wage, 0.01)
+              context.self ! IssueBond(state.bankActor, producer.maxWorkers * producer.wage, 0.01)
               Behaviors.same
             } else {
               logProducerEvent(
@@ -310,7 +311,7 @@ object ProducerActor {
                 s"Attempting to hire workers at wage ${producer.wage}"
               )
 
-              context.ask(state.regionActor, RegionActor.ReceiveWorkerBid(_, state.producer.id, producer.wage)) {
+              context.ask(state.regionActor, Region.ReceiveWorkerBid(_, state.producer.id, producer.wage)) {
                 case Success(Right(())) =>
                   AddWorker()
                 case Success(Left(Some(co: Int))) =>
@@ -337,7 +338,7 @@ object ProducerActor {
               s"Bidding for worker at wage $wage"
             )
 
-            context.ask(sendTo, RegionActor.ReceiveWorkerBid(_, state.producer.id, wage)) {
+            context.ask(sendTo, Region.ReceiveWorkerBid(_, state.producer.id, wage)) {
               case Success(true) =>
                 AddWorker()
               case _ =>

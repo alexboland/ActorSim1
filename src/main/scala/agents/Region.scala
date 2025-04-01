@@ -1,6 +1,7 @@
 package agents
 
 import agents.EconAgent.CounterOffer
+import agents.Region.*
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
@@ -77,10 +78,48 @@ object Region {
       season = Spring,
     )
   }
+  
+  trait Command
+
+  case class DiscoverResource(resourceType: ResourceType, quantity: Int) extends Command
+
+  case class InitializeRegion(region: Region) extends Command
+
+  case class ConsumeFood() extends Command
+
+  case class ChangePopulation() extends Command
+
+  case class ReceiveWorkerBid(replyTo: ActorRef[Either[Option[Int], Unit]], agentId: String, price: Int) extends Command
+
+  case class ProduceBaseResources() extends Command
+
+  case class ChangeSeason() extends Command
+
+  case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
+
+  case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends Command
+
+  case class SellSpareResources() extends Command
+
+  case class BuildFarm() extends Command
+
+  case class BuildBank() extends Command
+
+  case class BuildMarket() extends Command
+
+  case class BuildProducer(producer: Producer) extends Command
+
+  case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends Command
+
+  case class SpawnFounder() extends Command
+
+  case class UnassignWorkers(qty: Int) extends Command
+
+  case class AssignWorkers(qty: Int) extends Command
+  
 }
 
 object RegionActor {
-  trait RegionCommand
 
   case class InfoResponse(region: Region) extends GameInfo.InfoResponse {
     val agent = region
@@ -95,42 +134,7 @@ object RegionActor {
     val agent = region
   }
 
-  case class DiscoverResource(resourceType: ResourceType, quantity: Int) extends RegionCommand
-
-  case class InitializeRegion(region: Region) extends RegionCommand
-
-  case class ConsumeFood() extends RegionCommand
-
-  case class ChangePopulation() extends RegionCommand
-
-  case class ReceiveWorkerBid(replyTo: ActorRef[Either[Option[Int], Unit]], agentId: String, price: Int) extends RegionCommand
-
-  case class ProduceBaseResources() extends RegionCommand
-
-  case class ChangeSeason() extends RegionCommand
-
-  case class SellResourceToGovt(resourceType: ResourceType, qty: Int, price: Int) extends RegionCommand
-  case class BuyResourceFromGovt(resourceType: ResourceType, qty: Int, price: Int) extends RegionCommand
-
-  case class SellSpareResources() extends RegionCommand
-
-  case class BuildFarm() extends RegionCommand
-
-  case class BuildBank() extends RegionCommand
-
-  case class BuildMarket() extends RegionCommand
-
-  case class BuildProducer(producer: Producer) extends RegionCommand
-
-  case class ShowFullInfo(replyTo: ActorRef[Option[GameInfo.InfoResponse]]) extends RegionCommand
-
-  case class SpawnFounder() extends RegionCommand
-
-  case class UnassignWorkers(qty: Int) extends RegionCommand
-
-  case class AssignWorkers(qty: Int) extends RegionCommand
-
-  type Command = RegionCommand | EconAgent.Command | GameActorCommand | BankingCommand | Market.Command
+  type Command = Region.Command | EconAgent.Command | GameActorCommand | BankingCommand | Market.Command
 
   implicit val timeout: Timeout = Timeout(3.seconds) // Define an implicit timeout for ask pattern
 
@@ -614,81 +618,88 @@ object RegionActor {
             }
 
           case BuildProducer(producer) =>
-            val actorRef = context.spawn(ProducerActor(ProducerActorState(producer, Map(), context.self, Map())), producer.id)
+            (for {
+              marketId <- econAgentIds.getOrElse("market", List()).headOption
+              marketActor <- econActors.get(marketId).collect { case ma: ActorRef[MarketActor.Command] => ma }
+              bankId <- econAgentIds.getOrElse("bank", List()).headOption
+              bankActor <- econActors.get(bankId).collect { case ba: ActorRef[BankActor.Command] => ba }
+            } yield {
+              val actorRef = context.spawn(ProducerActor(ProducerActorState(producer, context.self, marketActor, bankActor, Map())), producer.id)
 
-            // Get the founder ID from the bonds (if any) for cleanup
-            val founderId = if (producer.outstandingBonds.nonEmpty) {
-              // Just get the debtorId from the first bond (they should all have the same debtorId)
-              producer.outstandingBonds.values.headOption.map(_.debtorId)
-            } else {
-              None
-            }
-
-            // Update the bank's records if there are outstanding bonds
-            if (producer.outstandingBonds.nonEmpty) {
-              econAgentIds.get("bank").flatMap(_.headOption).foreach { bankId =>
-                econActors.get(bankId).foreach {
-                  case bankActor: ActorRef[BankActor.Command] =>
-                    // Notify bank of the new debtor ID for these bonds with explicit actor reference
-                    bankActor ! UpdateBondDebtor(producer.outstandingBonds.keys.toList, producer.id, actorRef)
-                  case _ =>
-                  // Do nothing if not a BankActor
-                }
+              // Get the founder ID from the bonds (if any) for cleanup
+              val founderId = if (producer.outstandingBonds.nonEmpty) {
+                // Just get the debtorId from the first bond (they should all have the same debtorId)
+                producer.outstandingBonds.values.headOption.map(_.debtorId)
+              } else {
+                None
               }
-            }
 
-            // Add the new producer
-            val updatedProducerIds = producer.id :: econAgentIds.getOrElse("producers", List())
-            val updatedAgentIds = econAgentIds + ("producers" -> updatedProducerIds)
-            val updatedActors = econActors + (producer.id -> actorRef)
+              // Update the bank's records if there are outstanding bonds
+              if (producer.outstandingBonds.nonEmpty) {
+                bankActor ! UpdateBondDebtor(producer.outstandingBonds.keys.toList, producer.id, actorRef)
+              }
 
-            // Log producer construction
-            logEvent(
-              EventType.ConstructionCompleted,
-              s"Producer constructed (ID: ${producer.id}, Type: ${producer.resourceProduced})"
-            )
+              // Add the new producer
+              val updatedProducerIds = producer.id :: econAgentIds.getOrElse("producers", List())
+              val updatedAgentIds = econAgentIds + ("producers" -> updatedProducerIds)
+              val updatedActors = econActors + (producer.id -> actorRef)
 
-            // Remove the founder from econAgentIds and econActors if we found a founderId
-            val (finalAgentIds, finalActors) = founderId match {
-              case Some(id) =>
-                // Remove founder from econAgentIds (filter it out of the "founders" list)
-                val cleanedAgentIds = updatedAgentIds.updated(
-                  "founders",
-                  updatedAgentIds.getOrElse("founders", List()).filterNot(_ == id)
-                )
-
-                // Remove founder from econActors
-                val cleanedActors = updatedActors - id
-
-                (cleanedAgentIds, cleanedActors)
-
-              case None =>
-                // No founder to remove
-                (updatedAgentIds, updatedActors)
-            }
-
-            tick(state.copy(econAgentIds = finalAgentIds, econActors = finalActors))
-
-          case SpawnFounder() =>
-            // Heuristic for limiting amount of founders happening at once
-            if (econAgentIds.getOrElse("founders", List()).length < 3) {
-              val newId = UUID.randomUUID().toString
-              val founder = Founder(newId, region.id, None)
-              val actorRef = context.spawn(FounderActor(FounderActorState(founder, context.self)), newId)
-              val updatedFounderIds = founder.id :: econAgentIds.getOrElse("founders", List())
-              val updatedAgentIds = econAgentIds + ("founders" -> updatedFounderIds)
-              val updatedActors = econActors + (founder.id -> actorRef)
-
-              // Log founder creation
+              // Log producer construction
               logEvent(
-                EventType.FounderCreated,
-                s"New founder created (ID: ${founder.id})"
+                EventType.ConstructionCompleted,
+                s"Producer constructed (ID: ${producer.id}, Type: ${producer.resourceProduced})"
               )
 
-              tick(state.copy(econAgentIds = updatedAgentIds, econActors = updatedActors))
-            } else {
-              Behaviors.same
-            }
+              // Remove the founder from econAgentIds and econActors if we found a founderId
+              val (finalAgentIds, finalActors) = founderId match {
+                case Some(id) =>
+                  // Remove founder from econAgentIds (filter it out of the "founders" list)
+                  val cleanedAgentIds = updatedAgentIds.updated(
+                    "founders",
+                    updatedAgentIds.getOrElse("founders", List()).filterNot(_ == id)
+                  )
+
+                  // Remove founder from econActors
+                  val cleanedActors = updatedActors - id
+
+                  (cleanedAgentIds, cleanedActors)
+
+                case None =>
+                  // No founder to remove
+                  (updatedAgentIds, updatedActors)
+              }
+
+              tick(state.copy(econAgentIds = finalAgentIds, econActors = finalActors))
+            }).getOrElse(Behaviors.same)
+
+
+          case SpawnFounder() =>
+            (for {
+              marketId <- econAgentIds.getOrElse("market", List()).headOption
+              marketActor <- econActors.get(marketId).collect { case ma: ActorRef[MarketActor.Command] => ma }
+              bankId <- econAgentIds.getOrElse("bank", List()).headOption
+              bankActor <- econActors.get(bankId).collect { case ba: ActorRef[BankActor.Command] => ba }
+            } yield {
+              // Heuristic for limiting amount of founders happening at once
+              if (econAgentIds.getOrElse("founders", List()).length < 3) {
+                val newId = UUID.randomUUID().toString
+                val founder = Founder(newId, region.id, None)
+                val actorRef = context.spawn(FounderActor(FounderActorState(founder, context.self, marketActor, bankActor)), newId)
+                val updatedFounderIds = founder.id :: econAgentIds.getOrElse("founders", List())
+                val updatedAgentIds = econAgentIds + ("founders" -> updatedFounderIds)
+                val updatedActors = econActors + (founder.id -> actorRef)
+
+                // Log founder creation
+                logEvent(
+                  EventType.FounderCreated,
+                  s"New founder created (ID: ${founder.id})"
+                )
+
+                tick(state.copy(econAgentIds = updatedAgentIds, econActors = updatedActors))
+              } else {
+                Behaviors.same
+              }
+            }).getOrElse(Behaviors.same)
 
           case UnassignWorkers(qty) =>
             // Log worker unassignment
