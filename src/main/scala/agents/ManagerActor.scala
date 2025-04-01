@@ -239,7 +239,7 @@ object ManagerActor {
         // Add the event to our history
         gameHistory = gameHistory.addEvent(event)
         // Optionally log the event to console for debugging
-        println(s"Game event: $event")
+        //println(s"Game event: $event")
         Behaviors.same
 
       case GetGameHistory(agentId, regionId, eventType, fromTime, toTime, offset, limit, replyTo) =>

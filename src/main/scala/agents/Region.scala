@@ -630,10 +630,8 @@ object RegionActor {
                 econActors.get(bankId).foreach {
                   case bankActor: ActorRef[BankActor.Command] =>
                     // Notify bank of the new debtor ID for these bonds with explicit actor reference
-                    println(s"====UPDATE BOND DEBTOR TO ${producer.id}")
                     bankActor ! UpdateBondDebtor(producer.outstandingBonds.keys.toList, producer.id, actorRef)
                   case _ =>
-                    println("====DOING NOTHING=====")
                   // Do nothing if not a BankActor
                 }
               }

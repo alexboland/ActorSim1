@@ -65,7 +65,6 @@ object FounderActor {
               Behaviors.same
 
             case ReceiveBid(replyTo, bidderId, resourceType, quantity, price) =>
-              println(s"====FOUNDER ${founder.id} RECEIVED BID OF ${price} FOR ${resourceType.toString}")
               // Bids here are used to goad the founder into investing
               // Initialize Producer with all necessary fields
               val facility = Producer.newProducer(founder.regionId, 1, resourceType)
@@ -135,8 +134,6 @@ object FounderActor {
 
                 case PayBond(bond, amount, replyTo) =>
                   val amountToPay = Math.min(facility.storedResources.getOrElse(Money, 0), amount)
-                  println(s"===FOUNDER ${founder.id} MAKING BOND PAYMENT OF ${amountToPay} FROM RESERVES OF ${facility.storedResources.getOrElse(Money, 0)}===")
-
                   val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay) * bond.interestRate).toInt)
                   val newOutstandingBonds = if (updatedBond.totalOutstanding <= 0) {
                     facility.outstandingBonds - bond.id

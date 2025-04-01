@@ -132,8 +132,6 @@ object GovernmentActor {
               // Look up the current version of the bond
               government.bonds.get(bondId) match {
                 case Some(currentBond) =>
-                  context.log.info(s"Government collecting payment of $amount on bond ${currentBond.id} from ${currentBond.debtorId}")
-
                   government.econActors.get(currentBond.debtorId) match {
                     case Some(actorRef) =>
                       context.ask(actorRef, PayBond(currentBond, amount, _)) {
@@ -141,22 +139,18 @@ object GovernmentActor {
                           val updatedBond = currentBond.copy(totalOutstanding = ((currentBond.totalOutstanding - payment) * currentBond.interestRate).toInt)
 
                           if (updatedBond.totalOutstanding <= 0) {
-                            context.log.info(s"Bond ${currentBond.id} fully repaid by ${currentBond.debtorId}. Final payment: $payment")
                             timers.cancel(s"collect-$bondId")
                           }
 
                           UpdateBond(updatedBond)
                         case Failure(err) =>
-                          context.log.error(s"Failed to collect payment on bond ${currentBond.id}: ${err.getMessage}")
                           ActorNoOp()
                         case _ =>
                           ActorNoOp()
                       }
                     case None =>
-                      context.log.warn(s"Could not find actor reference for debtor ${currentBond.debtorId}")
                   }
                 case None =>
-                  context.log.warn(s"Bond $bondId no longer exists in bonds owned")
                   timers.cancel(s"collect-$bondId")
               }
               Behaviors.same
