@@ -137,7 +137,7 @@ object BankActor {
                 )
               }
 
-              val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay) * bond.interestRate).toInt)
+              val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay) * (1 + bond.interestRate)).toInt)
               val newOutstandingBonds = if (updatedBond.totalOutstanding <= 0) {
                 logBankEvent(
                   EventType.BondRepaid,

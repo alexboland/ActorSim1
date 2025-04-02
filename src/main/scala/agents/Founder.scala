@@ -136,7 +136,7 @@ object FounderActor {
 
                 case PayBond(bond, amount, replyTo) =>
                   val amountToPay = Math.min(facility.storedResources.getOrElse(Money, 0), amount)
-                  val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay) * bond.interestRate).toInt)
+                  val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amountToPay) * (1 + bond.interestRate)).toInt)
                   val newOutstandingBonds = if (updatedBond.totalOutstanding <= 0) {
                     facility.outstandingBonds - bond.id
                   } else {
