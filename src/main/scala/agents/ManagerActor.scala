@@ -31,9 +31,8 @@ object ManagerActor {
   case class SetGovernmentInterestRate(rate: Double, replyTo: ActorRef[Boolean]) extends Command
   case class ActorNoOp() extends Command
 
-
-  // New commands for game history
-  case class AddGameEvent(event: GameEvent) extends Command
+  // New commands for game history actor
+  case class GetGameHistoryActor(replyTo: ActorRef[ActorRef[GameHistoryActor.Command]]) extends Command
   case class GetGameHistory(
                              agentId: Option[String] = None,
                              regionId: Option[String] = None,
@@ -42,26 +41,8 @@ object ManagerActor {
                              toTime: Option[Long] = None,
                              offset: Int = 0,
                              limit: Int = 100,
-                             replyTo: ActorRef[GameHistoryResponse]
+                             replyTo: ActorRef[GameHistoryActor.GameHistoryResponse]
                            ) extends Command
-
-  case class GameHistoryResponse(events: Vector[GameEvent], totalCount: Int)
-
-  // Helper method to create events easily
-  def createEvent(
-                   agentId: String,
-                   regionId: String,
-                   eventType: EventType,
-                   eventText: String
-                 ): GameEvent = {
-    GameEvent(
-      timestamp = System.currentTimeMillis(),
-      agentId = agentId,
-      regionId = regionId,
-      eventType = eventType,
-      eventText = eventText
-    )
-  }
 
   private case class InternalRegionResponse(regionOpt: Option[Region]) extends Command
   private case class InternalGovtResponse(govtOpt: Option[Government], replyTo: ActorRef[Option[Government]]) extends Command
@@ -70,14 +51,15 @@ object ManagerActor {
   private var regions = Map.empty[String, ActorRef[RegionActor.Command]]
   private var inProgressCollections = Map.empty[UUID, List[RegionActor.InfoResponse]]
 
-  // Game history storage
-  private var gameHistory = GameHistory()
-
   implicit val timeout: Timeout = 3.seconds
 
   def apply(): Behavior[Command] = Behaviors.setup { context =>
     implicit val ec = context.executionContext
     implicit val scheduler = context.system.scheduler
+
+    // Create GameHistoryActor when ManagerActor is created
+    val gameHistoryActor = context.spawn(GameHistoryActor(), "GameHistory")
+
     Behaviors.receiveMessage {
       case CreateGovernment(replyTo) =>
         println("====CREATE GOVT COMMAND=====")
@@ -99,13 +81,13 @@ object ManagerActor {
             actorRef ! GovernmentActor.InitializeGov(Government.newGov())
 
             // Log event to game history
-            val event = createEvent(
+            val event = GameHistoryActor.createEvent(
               "system",
               "global",
               EventType.Custom("GovernmentCreated"),
               "A new government was established"
             )
-            context.self ! AddGameEvent(event)
+            gameHistoryActor ! GameHistoryActor.AddGameEvent(event)
 
             context.ask(actorRef, ShowInfo.apply) {
               case Success(Some(GovernmentActor.InfoResponse(govt))) =>
@@ -152,13 +134,13 @@ object ManagerActor {
               govt ! GovernmentActor.AddRegion(region.id, actorRef)
 
               // Log event to game history
-              val event = createEvent(
+              val event = GameHistoryActor.createEvent(
                 region.id,
                 region.id,
                 EventType.Custom("RegionCreated"),
                 s"A new region was established at (${location.x}, ${location.y})"
               )
-              context.self ! AddGameEvent(event)
+              gameHistoryActor ! GameHistoryActor.AddGameEvent(event)
 
               acc :+ actorRef
             }
@@ -172,7 +154,7 @@ object ManagerActor {
         government match {
           case Some(govtActor) =>
             govtActor ! SetInterestRate(rate)
-             replyTo ! true
+            replyTo ! true
           case None =>
             replyTo ! false
         }
@@ -220,13 +202,13 @@ object ManagerActor {
             govt ! GovernmentActor.AddRegion(region.id, actorRef)
 
             // Log event to game history
-            val event = createEvent(
+            val event = GameHistoryActor.createEvent(
               region.id,
               region.id,
               EventType.Custom("RegionCreated"),
               s"A new region was established at ($x, $y)"
             )
-            context.self ! AddGameEvent(event)
+            gameHistoryActor ! GameHistoryActor.AddGameEvent(event)
 
             replyTo ! RegionCreated(Right(actorRef))
           case None =>
@@ -234,17 +216,16 @@ object ManagerActor {
         }
         Behaviors.same
 
-      // Game history handling
-      case AddGameEvent(event) =>
-        // Add the event to our history
-        gameHistory = gameHistory.addEvent(event)
-        // Optionally log the event to console for debugging
-        //println(s"Game event: $event")
+      // GameHistoryActor related handlers
+      case GetGameHistoryActor(replyTo) =>
+        replyTo ! gameHistoryActor
         Behaviors.same
 
       case GetGameHistory(agentId, regionId, eventType, fromTime, toTime, offset, limit, replyTo) =>
-        val (results, totalCount) = gameHistory.search(agentId, regionId, eventType, fromTime, toTime, offset, limit)
-        replyTo ! GameHistoryResponse(results, totalCount)
+        // Forward to GameHistoryActor
+        gameHistoryActor ! GameHistoryActor.GetGameHistory(
+          agentId, regionId, eventType, fromTime, toTime, offset, limit, replyTo
+        )
         Behaviors.same
 
       // Existing message handlers...

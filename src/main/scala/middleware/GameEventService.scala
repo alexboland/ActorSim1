@@ -2,7 +2,12 @@ package middleware
 
 import akka.actor.typed.{ActorRef, ActorSystem}
 import akka.actor.typed.scaladsl.ActorContext
-import agents.ManagerActor
+import akka.actor.typed.scaladsl.AskPattern._
+import akka.util.Timeout
+import agents.{GameHistoryActor, ManagerActor}
+
+import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Await}
 
 /**
  * Simplified service trait for game event logging with a single core method
@@ -27,9 +32,9 @@ trait GameEventService {
 }
 
 /**
- * Default implementation that uses the top-level ManagerActor
+ * Implementation that uses a direct reference to the GameHistoryActor
  */
-class SystemGuardianEventService(system: ActorSystem[ManagerActor.Command]) extends GameEventService {
+class DirectEventService(gameHistoryActor: ActorRef[GameHistoryActor.Command]) extends GameEventService {
   override def logEvent(
                          agentId: String,
                          regionId: String,
@@ -43,28 +48,7 @@ class SystemGuardianEventService(system: ActorSystem[ManagerActor.Command]) exte
       eventType = eventType,
       eventText = eventText
     )
-    system ! ManagerActor.AddGameEvent(event)
-  }
-}
-
-/**
- * Implementation that uses an explicit reference to the ManagerActor
- */
-class DirectEventService(managerActor: ActorRef[ManagerActor.Command]) extends GameEventService {
-  override def logEvent(
-                         agentId: String,
-                         regionId: String,
-                         eventType: EventType,
-                         eventText: String
-                       ): Unit = {
-    val event = GameEvent(
-      timestamp = System.currentTimeMillis(),
-      agentId = agentId,
-      regionId = regionId,
-      eventType = eventType,
-      eventText = eventText
-    )
-    managerActor ! ManagerActor.AddGameEvent(event)
+    gameHistoryActor ! GameHistoryActor.AddGameEvent(event)
   }
 }
 
@@ -74,20 +58,32 @@ class DirectEventService(managerActor: ActorRef[ManagerActor.Command]) extends G
 object GameEventService {
   /**
    * Create a service instance using the actor system
+   * This gets the GameHistoryActor reference from ManagerActor
    */
   def apply(system: ActorSystem[_]): GameEventService = {
-    new SystemGuardianEventService(system.asInstanceOf[ActorSystem[ManagerActor.Command]])
+    implicit val timeout: Timeout = 3.seconds
+    implicit val ec: ExecutionContext = system.executionContext
+    implicit val scheduler = system.scheduler
+
+    // Get GameHistoryActor reference from the ManagerActor
+    val managerSystem = system.asInstanceOf[ActorSystem[ManagerActor.Command]]
+    val future = managerSystem.ask[ActorRef[GameHistoryActor.Command]](ManagerActor.GetGameHistoryActor)
+    val gameHistoryActor = Await.result(future, timeout.duration)
+
+    // Create a DirectEventService with the GameHistoryActor
+    new DirectEventService(gameHistoryActor)
   }
 
   /**
-   * Create a service instance using a direct reference to the ManagerActor
+   * Create a service instance using a direct reference to the GameHistoryActor
    */
-  def apply(managerActor: ActorRef[ManagerActor.Command]): GameEventService = {
-    new DirectEventService(managerActor)
+  def apply(gameHistoryActor: ActorRef[GameHistoryActor.Command]): GameEventService = {
+    new DirectEventService(gameHistoryActor)
   }
 
   /**
    * Create a service instance from an actor context
+   * This will use the system to get the GameHistoryActor reference
    */
   def apply[T](context: ActorContext[T]): GameEventService = {
     apply(context.system)

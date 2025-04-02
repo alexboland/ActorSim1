@@ -1,5 +1,5 @@
-import agents.ManagerActor
-import akka.actor.typed.ActorSystem
+import agents.{GameHistoryActor, ManagerActor}
+import akka.actor.typed.{ActorRef, ActorSystem}
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, StatusCodes}
 import akka.http.scaladsl.server.Directives._
@@ -10,6 +10,7 @@ import middleware.{EventType, GameEvent}
 import spray.json._
 
 import scala.concurrent.duration._
+import scala.concurrent.Future
 import scala.util.{Failure, Success}
 
 object HistoryRoutes {
@@ -29,14 +30,21 @@ object HistoryRoutes {
     )
   }
 
-  implicit val gameHistoryResponseEncoder: Encoder[ManagerActor.GameHistoryResponse] = Encoder.instance { response =>
+  implicit val gameHistoryResponseEncoder: Encoder[GameHistoryActor.GameHistoryResponse] = Encoder.instance { response =>
     Json.obj(
       "events" -> Json.arr(response.events.map(_.asJson): _*),
       "totalCount" -> Json.fromInt(response.totalCount)
     )
   }
 
-  def routes(implicit system: ActorSystem[ManagerActor.Command], timeout: Timeout = 5.seconds) =
+  def routes(implicit system: ActorSystem[ManagerActor.Command], timeout: Timeout = 5.seconds) = {
+    // Get GameHistoryActor reference once for all routes
+    implicit val ec = system.executionContext
+
+    val gameHistoryActorFuture: Future[ActorRef[GameHistoryActor.Command]] =
+      system.ask[ActorRef[GameHistoryActor.Command]](ManagerActor.GetGameHistoryActor)
+
+    // Routes definition using the GameHistoryActor
     pathPrefix("history") {
       get {
         parameters(
@@ -64,21 +72,24 @@ object HistoryRoutes {
             case custom => EventType.Custom(custom)
           }
 
-          val historyFuture = system.ask(ref =>
-            ManagerActor.GetGameHistory(
-              agentId,
-              regionId,
-              eventType,
-              fromTime,
-              toTime,
-              offset,
-              limit,
-              ref
+          // First get the GameHistoryActor, then use it to get history
+          val historyFuture = gameHistoryActorFuture.flatMap { historyActor =>
+            historyActor.ask[GameHistoryActor.GameHistoryResponse](ref =>
+              GameHistoryActor.GetGameHistory(
+                agentId,
+                regionId,
+                eventType,
+                fromTime,
+                toTime,
+                offset,
+                limit,
+                ref
+              )
             )
-          )
+          }
 
           onComplete(historyFuture) {
-            case Success(response: ManagerActor.GameHistoryResponse) =>
+            case Success(response: GameHistoryActor.GameHistoryResponse) =>
               complete(HttpEntity(ContentTypes.`application/json`, response.asJson.noSpaces))
             case Failure(ex) =>
               complete(StatusCodes.InternalServerError ->
@@ -89,14 +100,17 @@ object HistoryRoutes {
         path("recent") {
           get {
             parameter("limit".as[Int].withDefault(10)) { limit =>
-              val historyFuture = system.ask(ref =>
-                ManagerActor.GetGameHistory(
-                  None, None, None, None, None, 0, limit, ref
+              // Use the GameHistoryActor to get recent events
+              val historyFuture = gameHistoryActorFuture.flatMap { historyActor =>
+                historyActor.ask[GameHistoryActor.GameHistoryResponse](ref =>
+                  GameHistoryActor.GetGameHistory(
+                    None, None, None, None, None, 0, limit, ref
+                  )
                 )
-              )
+              }
 
               onComplete(historyFuture) {
-                case Success(response: ManagerActor.GameHistoryResponse) =>
+                case Success(response: GameHistoryActor.GameHistoryResponse) =>
                   complete(HttpEntity(ContentTypes.`application/json`, response.asJson.noSpaces))
                 case Failure(ex) =>
                   complete(StatusCodes.InternalServerError ->
@@ -106,4 +120,5 @@ object HistoryRoutes {
           }
         }
     }
+  }
 }
