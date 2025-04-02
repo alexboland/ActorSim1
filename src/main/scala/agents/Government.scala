@@ -62,17 +62,6 @@ object GovernmentActor {
               println("government actor replied to ShowInfo command")
               Behaviors.same
 
-            case BuyFromSeller(seller, resourceType, qty, price) =>
-              val newStoredResources = storedResources + (resourceType -> (storedResources.getOrElse(resourceType, 0) + qty))
-              seller ! SellToBuyer(context.self, resourceType, qty, price)
-
-              tick(government.copy(storedResources = newStoredResources))
-
-            case SellToBuyer(buyer, resourceType, qty, price)  =>
-              val newStoredResources = storedResources + (resourceType -> (storedResources.getOrElse (resourceType, 0) - qty) )
-
-              tick (government.copy (storedResources = newStoredResources) )
-
             case GetBidPrice(replyTo, resourceType) =>
               replyTo ! government.bidPrices.get(resourceType)
               Behaviors.same
@@ -136,7 +125,7 @@ object GovernmentActor {
                     case Some(actorRef) =>
                       context.ask(actorRef, PayBond(currentBond, amount, _)) {
                         case Success(payment: Int) =>
-                          val updatedBond = currentBond.copy(totalOutstanding = ((currentBond.totalOutstanding - payment) * currentBond.interestRate).toInt)
+                          val updatedBond = currentBond.copy(totalOutstanding = Math.round((currentBond.totalOutstanding - payment) * currentBond.interestRate).toInt)
 
                           if (updatedBond.totalOutstanding <= 0) {
                             timers.cancel(s"collect-$bondId")
@@ -180,7 +169,7 @@ object GovernmentActor {
         Behaviors.receive { (context, message) =>
           message match {
             case InitializeGov(government) =>
-              timers.startTimerWithFixedDelay("trading-timer", BuyAndSellResources(), 5.seconds)
+              timers.startTimerWithFixedDelay("trading-timer", BuyAndSellResources(), 15.seconds)
               tick(government)
             case _ =>
               Behaviors.same

@@ -1,7 +1,7 @@
 package agents
 
 import agents.Founder.*
-import agents.Region.{BuildProducer, UnassignWorkers}
+import agents.Region.{BuildProducer, ReceivePayment, UnassignWorkers}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
@@ -212,6 +212,8 @@ object FounderActor {
                   }
                   val updatedResources = facility.storedResources +
                     (Money -> (facility.storedResources.getOrElse(Money, 0) - (workersToPay * facility.wage)))
+
+                  state.regionActor ! ReceivePayment(workersToPay * facility.wage)
 
                   val updatedFacility = facility.copy(
                     workers = workersToPay,

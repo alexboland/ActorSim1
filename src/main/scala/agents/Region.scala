@@ -101,8 +101,6 @@ object Region {
 
   case class SellSpareResources() extends Command
 
-  case class BuildFarm() extends Command
-
   case class BuildBank() extends Command
 
   case class BuildMarket() extends Command
@@ -116,6 +114,8 @@ object Region {
   case class UnassignWorkers(qty: Int) extends Command
 
   case class AssignWorkers(qty: Int) extends Command
+
+  case class ReceivePayment(qty: Int) extends Command
   
 }
 
@@ -159,6 +159,7 @@ object RegionActor {
 
       Behaviors.receive { (context, message) =>
         val region = state.region
+        val storedResources = region.storedResources
         val econAgentIds = state.econAgentIds
         val econActors = state.econActors
         message match {
@@ -190,38 +191,6 @@ object RegionActor {
             }
             Behaviors.same
 
-          case GetBidPrice(replyTo, resourceType) =>
-            econAgentIds.get("market").flatMap(_.headOption).map { marketId =>
-              econActors.get(marketId)
-                .collect { case actor: ActorRef[MarketActor.Command] => actor }.map { marketActor =>
-                  context.ask(marketActor, GetBidPrice(_, resourceType)) {
-                    case Success(bidOpt: Option[Int]) =>
-                      replyTo ! bidOpt
-                      ActorNoOp()
-                    case _ =>
-                      println("Some kind of error...")
-                      ActorNoOp()
-                  }
-                  Behaviors.same
-                }.getOrElse(Behaviors.same)
-            }.getOrElse(Behaviors.same)
-
-          case GetAskPrice(replyTo, resourceType) =>
-            econAgentIds.getOrElse("market", List()).headOption.foreach {id =>
-              econActors.get(id).foreach {
-                case (marketActor: ActorRef[MarketActor.Command]) =>
-                  context.ask(marketActor, GetAskPrice(_, resourceType)) {
-                    case Success(askOpt: Option[Int]) =>
-                      replyTo ! askOpt
-                      ActorNoOp()
-                    case _ =>
-                      println("Some kind of error...")
-                      ActorNoOp()
-                  }
-              }
-            }
-            Behaviors.same
-
           case ReceiveBond(bond, replyTo, issuedFrom) =>
             // For now, if the bond is being issued by a (the) bank, forward to government (central bank)
             // Otherwise, forward to the one bank in the region
@@ -247,8 +216,15 @@ object RegionActor {
             val newNaturalResources = region.baseProduction.updated(resourceType, region.baseProduction(resourceType) + quantity)
             tick(region.copy(baseProduction = newNaturalResources))*/
 
+          case ReceivePayment(qty) =>
+            tick(
+              state = state.copy(
+                region = region.copy(
+                  storedResources = storedResources +
+                    (Money -> (storedResources.getOrElse(Money, 0) + qty)))))
+
           case ProduceBaseResources() =>
-            val newStoredResources = region.baseProduction.foldLeft(region.storedResources) { (updatedResources, entry) =>
+            val newStoredResources = region.baseProduction.foldLeft(storedResources) { (updatedResources, entry) =>
               val output = Math.round(10 * Math.sqrt(region.population * (1.5 - Math.random())) * entry._2) // Square root with coefficient
               entry._1 match {
                 case Food =>
@@ -261,7 +237,7 @@ object RegionActor {
 
             // Log resource production events
             newStoredResources.foreach { case (resourceType, quantity) =>
-              val previousQuantity = region.storedResources.getOrElse(resourceType, 0)
+              val previousQuantity = storedResources.getOrElse(resourceType, 0)
               val produced = quantity - previousQuantity
               if (produced > 0) {
                 logEvent(
@@ -291,7 +267,7 @@ object RegionActor {
                   }
                 }
 
-                (region.storedResources - Food).foreach { (rt, qty) =>
+                (storedResources - Food).foreach { (rt, qty) =>
                   context.ask(marketActor, GetBidPrice(_, rt)) {
                     case Success(Some(price: Int)) =>
                       MakeAsk(marketActor, rt, qty, price)
@@ -306,7 +282,7 @@ object RegionActor {
 
           case ConsumeFood() =>
             val foodConsumed = region.population //still tweaking this idea
-            val updatedResources = region.storedResources + (Food -> Math.max(region.storedResources(Food) - foodConsumed, 0))
+            val updatedResources = storedResources + (Food -> Math.max(storedResources(Food) - foodConsumed, 0))
 
             // Log food consumption
             logEvent(
@@ -314,8 +290,8 @@ object RegionActor {
               s"Consumed ${foodConsumed} food (Remaining: ${updatedResources(Food)})"
             )
 
-            val newPop = if (foodConsumed > region.storedResources(Food)) {
-              val popDecrease = Math.round((foodConsumed - region.storedResources(Food))/5)
+            val newPop = if (foodConsumed > storedResources(Food)) {
+              val popDecrease = Math.round((foodConsumed - storedResources(Food))/5)
               val newPopValue = Math.max(region.population - popDecrease, 0)
 
               // Log population decrease due to food shortage
@@ -353,7 +329,7 @@ object RegionActor {
             val maxGrowthFactor = 1.05f                        // Maximum growth factor
             val growthRange = maxGrowthFactor - baseGrowthFactor  // Range of growth factors (0.1)
             val k = 5.0f                                       // Controls the steepness of the sigmoid
-            val foodPerPopulation = region.storedResources(Food).toFloat / region.population.toFloat
+            val foodPerPopulation = storedResources(Food).toFloat / region.population.toFloat
             val x = foodPerPopulation - 1.0f                   // Center the sigmoid at foodPerPopulation = 1
             val s = 1.0f / (1.0f + Math.exp(-k * x).toFloat)   // Sigmoid function output between 0 and 1
             val growthFactor = baseGrowthFactor + growthRange * s
@@ -506,31 +482,16 @@ object RegionActor {
             sendTo ! ReceiveAsk(context.self, region.id, resourceType, quantity, price)
             Behaviors.same
 
-          case BuyFromSeller(seller, resourceType, quantity, price) =>
-            seller ! SellToBuyer(context.self, resourceType, quantity, price)
-            val updatedResources = region.storedResources + (resourceType -> (region.storedResources.getOrElse(resourceType, 0) + quantity), Money -> (region.storedResources.getOrElse(Money, 0) - Math.multiplyExact(quantity, price)))
-
-            // Log market transaction (buying)
+          case PurchaseResource(resourceType, quantity, price) =>
             logEvent(
               EventType.MarketTransaction,
-              s"Bought ${quantity} ${resourceType} at price ${price} (Total: ${quantity * price})"
+              s"Purchased $quantity units of $resourceType at price $price"
             )
 
+            val updatedResources = storedResources +
+              (resourceType -> (storedResources.getOrElse(resourceType, 0) + quantity)) +
+              (Money -> (storedResources.getOrElse(Money, 0) - (quantity*price)))
             tick(state.copy(region = region.copy(storedResources = updatedResources)))
-
-          case SellToBuyer(buyer, resourceType, quantity, price) =>
-            val updatedResources = region.storedResources +
-              (resourceType -> (region.storedResources.getOrElse(resourceType, 0) - quantity),
-                Money -> (region.storedResources.getOrElse(Money, 0) + Math.multiplyExact(quantity, price)))
-
-            // Log market transaction (selling)
-            logEvent(
-              EventType.MarketTransaction,
-              s"Sold ${quantity} ${resourceType} at price ${price} (Total: ${quantity * price})"
-            )
-
-            tick(state.copy(region = region.copy(storedResources = updatedResources)))
-
 
           case ReceiveWorkerBid(replyTo, agentId, price) =>
             if (region.population - region.assignedWorkers > 0) {
@@ -554,6 +515,7 @@ object RegionActor {
                           ActorNoOp()
                         }
                       case _ =>
+                        replyTo ! Left(None)
                         ActorNoOp()
                     }
                   case _ =>

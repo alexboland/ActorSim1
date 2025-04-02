@@ -81,7 +81,7 @@ const App = () => {
     // Set up dimensions and number of points
     const width = 7200;
     const height = 4200;
-    const numPoints = 20; // Adjust the number of vertices as desired
+    const numPoints = 1; // Adjust the number of vertices as desired
 
     // Generate an array of random points: each point is an array [x, y]
     const points = d3.range(numPoints).map(() => ({

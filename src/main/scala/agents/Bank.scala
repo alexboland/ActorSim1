@@ -210,7 +210,7 @@ object BankActor {
 
             case DepositBondPayment(bond, amount) =>
               val newStoredMoney = bank.storedMoney + amount
-              val updatedBond = bond.copy(totalOutstanding = ((bond.totalOutstanding - amount)*bond.interestRate).toInt)
+              val updatedBond = bond.copy(totalOutstanding = Math.round((bond.totalOutstanding - amount)*bond.interestRate).toInt)
 
               if (updatedBond.totalOutstanding <= 0) {
                 logBankEvent(
